@@ -3,6 +3,16 @@ import { createSandboxBackend } from "./backend";
 import { resolveDatabasePath } from "./db/client";
 import "./db/migrate-inline";
 import {
+  createApiKey,
+  listApiKeys,
+  revokeApiKey,
+} from "./db/api-keys";
+import {
+  authenticateRequest,
+  assertAdmin,
+  resolveAuthMode,
+} from "./auth";
+import {
   createSandbox,
   getSandbox,
   killSandbox,
@@ -33,8 +43,56 @@ async function handler(req: Request): Promise<Response> {
         ok: true,
         service: "f2b-sandbox",
         backend: backend.kind,
+        auth: resolveAuthMode(),
         db: resolveDatabasePath(),
       });
+    }
+
+    // --- API Key 管理（明文只在 POST 创建响应出现一次）---
+    if (pathname === "/v1/api-keys") {
+      if (method === "GET") {
+        assertAdmin(req);
+        const projectId = url.searchParams.get("projectId") ?? undefined;
+        return json({ keys: listApiKeys(projectId) });
+      }
+      if (method === "POST") {
+        assertAdmin(req);
+        const body = (await readJson(req)) as {
+          name?: string;
+          projectId?: string;
+        };
+        const { record, plaintext } = createApiKey({
+          name: body.name ?? "default",
+          projectId: body.projectId,
+        });
+        return json(
+          {
+            key: record,
+            /** 明文仅此一次；客户端须立即保存 */
+            secret: plaintext,
+          },
+          201,
+        );
+      }
+    }
+
+    const keyIdMatch = pathname.match(/^\/v1\/api-keys\/([^/]+)$/);
+    if (keyIdMatch && method === "DELETE") {
+      assertAdmin(req);
+      const id = decodeURIComponent(keyIdMatch[1]!);
+      const key = revokeApiKey(id);
+      if (!key) {
+        return json(
+          { error: { code: "NOT_FOUND", message: "api key not found" } },
+          404,
+        );
+      }
+      return json({ key });
+    }
+
+    // --- 沙箱产品 API：按 F2B_AUTH_MODE 鉴权 ---
+    if (pathname.startsWith("/v1/")) {
+      authenticateRequest(req);
     }
 
     if (pathname === "/v1/sandboxes") {
@@ -158,6 +216,6 @@ const nodeServer = http.createServer(async (req, res) => {
 nodeServer.listen(port, host, () => {
   const backend = createSandboxBackend();
   console.log(
-    `f2b-sandbox listening on http://${host}:${port} backend=${backend.kind} db=${resolveDatabasePath()}`,
+    `f2b-sandbox listening on http://${host}:${port} backend=${backend.kind} auth=${resolveAuthMode()} db=${resolveDatabasePath()}`,
   );
 });

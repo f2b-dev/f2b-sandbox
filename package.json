@@ -2,14 +2,15 @@
   "name": "@f2b/sandbox",
   "version": "0.1.0",
   "private": true,
-  "description": "灵境云 AI 沙箱产品微服务",
+  "description": "\u7075\u5883\u4e91 AI \u6c99\u7bb1\u4ea7\u54c1\u5fae\u670d\u52a1",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "migrate": "tsx src/db/migrate.ts",
     "typecheck": "tsc --noEmit",
-    "smoke": "tsx scripts/smoke.ts"
+    "smoke": "tsx scripts/smoke.ts",
+    "smoke:auth": "tsx scripts/smoke-auth.ts"
   },
   "dependencies": {
     "@f2b/spec": "file:../f2b-spec",
