@@ -57,12 +57,28 @@ curl -s http://127.0.0.1:8787/v1/sandboxes \
 | POST | `/v1/sandboxes/:id/commands/stream` | 命令（SSE：stdout/stderr/result） |
 | GET/POST | `/v1/sandboxes/:id/files` | 文件 |
 
-冒烟：
+冒烟 / CI：
 
 ```bash
 pnpm smoke              # auth=off 或带 F2B_API_KEY
 pnpm smoke:auth         # 需 auth=api_key + F2B_ADMIN_TOKEN
 pnpm smoke:stream       # SSE 流式命令
+pnpm ci:contract        # 自起服务：typecheck + 上述冒烟 → CONTRACT_CI_OK
+```
+
+GitHub Actions：`.github/workflows/ci.yml`（契约 + 镜像；`main` 推送 `ghcr.io/f2b-dev/sandbox`）。
+
+## 容器镜像
+
+```bash
+# 构建上下文为 f2b-spec / f2b-sandbox 的父目录
+pnpm docker:build
+# 等价：docker build -f f2b-sandbox/Dockerfile -t ghcr.io/f2b-dev/sandbox:local .
+
+docker run --rm -p 8787:8787 \
+  -e F2B_SANDBOX_BACKEND=fake \
+  -e F2B_AUTH_MODE=off \
+  ghcr.io/f2b-dev/sandbox:local
 ```
 
 ## 环境变量
@@ -73,3 +89,5 @@ pnpm smoke:stream       # SSE 流式命令
 
 - 契约：https://github.com/f2b-dev/f2b-spec  
 - 组织：https://github.com/f2b-dev  
+- 镜像：`ghcr.io/f2b-dev/sandbox`  
+

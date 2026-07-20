@@ -1,0 +1,21 @@
+# 在父目录构建时生效（docker build -f f2b-sandbox/Dockerfile ..）
+**/node_modules
+**/.git
+**/data
+**/*.db
+**/*.db-*
+**/.env
+**/.env.*
+**/*.log
+**/dist
+**/.turbo
+**/coverage
+**/.next
+f2b-web
+f2b-sdk-js
+f2b-sdk-python
+f2b-mcp-gateway
+f2b-tunnel
+f2b-docs
+f2b-infra
+Nova

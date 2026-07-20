@@ -1,0 +1,98 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: typecheck + contract smokes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout sandbox
+        uses: actions/checkout@v4
+        with:
+          path: f2b-sandbox
+
+      - name: Checkout f2b-spec (file: 依赖)
+        uses: actions/checkout@v4
+        with:
+          repository: f2b-dev/f2b-spec
+          path: f2b-spec
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@9.15.0 --activate
+
+      - name: Install f2b-spec
+        working-directory: f2b-spec
+        run: pnpm install --frozen-lockfile
+
+      - name: Install f2b-sandbox
+        working-directory: f2b-sandbox
+        run: pnpm install --frozen-lockfile
+
+      - name: Contract smokes
+        working-directory: f2b-sandbox
+        run: pnpm ci:contract
+
+  image:
+    name: docker image build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout sandbox
+        uses: actions/checkout@v4
+        with:
+          path: f2b-sandbox
+
+      - name: Checkout f2b-spec
+        uses: actions/checkout@v4
+        with:
+          repository: f2b-dev/f2b-spec
+          path: f2b-spec
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/f2b-dev/sandbox
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=
+
+      - name: Build (and push on main)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: f2b-sandbox/Dockerfile
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
