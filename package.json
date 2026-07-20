@@ -10,7 +10,8 @@
     "migrate": "tsx src/db/migrate.ts",
     "typecheck": "tsc --noEmit",
     "smoke": "tsx scripts/smoke.ts",
-    "smoke:auth": "tsx scripts/smoke-auth.ts"
+    "smoke:auth": "tsx scripts/smoke-auth.ts",
+    "smoke:stream": "tsx scripts/smoke-stream.ts"
   },
   "dependencies": {
     "@f2b/spec": "file:../f2b-spec",

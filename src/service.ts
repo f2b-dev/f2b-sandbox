@@ -5,6 +5,7 @@ import {
   ReadFileQuerySchema,
   RunCommandSchema,
   WriteFileSchema,
+  type CommandStreamEvent,
   type CreateSandboxInput,
   type SandboxRecord,
   type SandboxStatus,
@@ -159,6 +160,48 @@ export async function runSandboxCommand(id: string, raw: unknown) {
       err instanceof Error ? err.message : String(err),
       { cause: err },
     );
+  }
+}
+
+/** 流式命令：优先 backend.streamCommand，否则把整包结果拆成事件 */
+export async function* streamSandboxCommand(
+  id: string,
+  raw: unknown,
+): AsyncGenerator<CommandStreamEvent, void, unknown> {
+  const sb = await getSandbox(id);
+  assertRunning(sb);
+  const parsed = RunCommandSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new F2bError(ErrorCode.VALIDATION_ERROR, "invalid command payload", {
+      details: parsed.error.flatten(),
+    });
+  }
+  const backend = getBackend();
+  try {
+    if (backend.streamCommand) {
+      for await (const ev of backend.streamCommand(sb.remoteId!, parsed.data)) {
+        yield ev;
+      }
+      return;
+    }
+    const result = await backend.runCommand(sb.remoteId!, parsed.data);
+    if (result.stdout) yield { type: "stdout", text: result.stdout };
+    if (result.stderr) yield { type: "stderr", text: result.stderr };
+    yield { type: "result", result };
+  } catch (err) {
+    if (err instanceof F2bError) {
+      yield {
+        type: "error",
+        code: err.code,
+        message: err.message,
+      };
+      return;
+    }
+    yield {
+      type: "error",
+      code: ErrorCode.COMMAND_FAILED,
+      message: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 

@@ -20,9 +20,10 @@ import {
   listSandboxes,
   readSandboxFile,
   runSandboxCommand,
+  streamSandboxCommand,
   writeSandboxFile,
 } from "./service";
-import { json, jsonError, readJson } from "./http";
+import { json, jsonError, readJson, writeSse } from "./http";
 
 const port = Number(process.env.PORT ?? 8787);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -121,6 +122,23 @@ async function handler(req: Request): Promise<Response> {
       }
     }
 
+    const cmdStreamMatch = pathname.match(
+      /^\/v1\/sandboxes\/([^/]+)\/commands\/stream$/,
+    );
+    if (cmdStreamMatch && method === "POST") {
+      // 流式响应由 Node handler 直接 writeSse；此处用哨兵 Response 标记
+      const id = decodeURIComponent(cmdStreamMatch[1]!);
+      const body = await readJson(req);
+      return new Response(null, {
+        status: 200,
+        headers: {
+          "x-f2b-sse": "1",
+          "x-f2b-sandbox-id": id,
+          "x-f2b-sse-body": JSON.stringify(body ?? {}),
+        },
+      });
+    }
+
     const cmdMatch = pathname.match(/^\/v1\/sandboxes\/([^/]+)\/commands$/);
     if (cmdMatch && method === "POST") {
       const id = decodeURIComponent(cmdMatch[1]!);
@@ -192,7 +210,53 @@ const nodeServer = http.createServer(async (req, res) => {
             ? bodyBuf
             : undefined,
     });
+
+    // SSE 流式命令：鉴权后直接写 event-stream，避免缓冲整包 Response
+    const parsedUrl = new URL(url);
+    const streamMatch = parsedUrl.pathname.match(
+      /^\/v1\/sandboxes\/([^/]+)\/commands\/stream$/,
+    );
+    if (streamMatch && (req.method ?? "GET").toUpperCase() === "POST") {
+      try {
+        authenticateRequest(request);
+        const id = decodeURIComponent(streamMatch[1]!);
+        let body: unknown = {};
+        if (bodyBuf.length) {
+          try {
+            body = JSON.parse(bodyBuf.toString("utf8"));
+          } catch {
+            body = {};
+          }
+        }
+        await writeSse(res, streamSandboxCommand(id, body));
+      } catch (err) {
+        if (!res.headersSent) {
+          const response = jsonError(err);
+          res.statusCode = response.status;
+          response.headers.forEach((value, key) => res.setHeader(key, value));
+          const ab = await response.arrayBuffer();
+          res.end(Buffer.from(ab));
+        } else {
+          res.end();
+        }
+      }
+      return;
+    }
+
     const response = await handler(request);
+    // 兼容 handler 内 SSE 哨兵（一般不会走到）
+    if (response.headers.get("x-f2b-sse") === "1") {
+      const id = response.headers.get("x-f2b-sandbox-id") ?? "";
+      const rawBody = response.headers.get("x-f2b-sse-body") ?? "{}";
+      let body: unknown = {};
+      try {
+        body = JSON.parse(rawBody);
+      } catch {
+        body = {};
+      }
+      await writeSse(res, streamSandboxCommand(id, body));
+      return;
+    }
     res.statusCode = response.status;
     response.headers.forEach((value, key) => {
       res.setHeader(key, value);

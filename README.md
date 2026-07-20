@@ -53,7 +53,8 @@ curl -s http://127.0.0.1:8787/v1/sandboxes \
 | DELETE | `/v1/api-keys/:id` | 吊销（需 admin） |
 | GET/POST | `/v1/sandboxes` | 列表 / 创建 |
 | GET/DELETE | `/v1/sandboxes/:id` | 详情 / 销毁 |
-| POST | `/v1/sandboxes/:id/commands` | 命令 |
+| POST | `/v1/sandboxes/:id/commands` | 命令（整包 JSON） |
+| POST | `/v1/sandboxes/:id/commands/stream` | 命令（SSE：stdout/stderr/result） |
 | GET/POST | `/v1/sandboxes/:id/files` | 文件 |
 
 冒烟：
@@ -61,6 +62,7 @@ curl -s http://127.0.0.1:8787/v1/sandboxes \
 ```bash
 pnpm smoke              # auth=off 或带 F2B_API_KEY
 pnpm smoke:auth         # 需 auth=api_key + F2B_ADMIN_TOKEN
+pnpm smoke:stream       # SSE 流式命令
 ```
 
 ## 环境变量

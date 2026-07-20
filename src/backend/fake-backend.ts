@@ -1,11 +1,13 @@
 import type {
   CommandResult,
+  CommandStreamEvent,
   FileEntry,
   SandboxStatus,
 } from "@f2b/spec";
 import type {
   BackendSandboxHandle,
   CreateSandboxBackendRequest,
+  RunCommandInput,
   SandboxBackend,
 } from "./types";
 
@@ -86,14 +88,56 @@ export class FakeSandboxBackend implements SandboxBackend {
 
   async runCommand(
     remoteId: string,
-    input: {
-      cmd: string;
-      cwd?: string;
-      timeoutMs?: number;
-      env?: Record<string, string>;
-    },
+    input: RunCommandInput,
   ): Promise<CommandResult> {
     const s = this.require(remoteId);
+    return this.exec(s, input);
+  }
+
+  async *streamCommand(
+    remoteId: string,
+    input: RunCommandInput,
+  ): AsyncIterable<CommandStreamEvent> {
+    const s = this.require(remoteId);
+    const started = Date.now();
+    const cmd = input.cmd.trim();
+
+    // 模拟分片输出，便于客户端验证 SSE 多事件
+    if (cmd.startsWith("echo ") && !cmd.includes(">")) {
+      const text = stripQuotes(cmd.slice(5).trim()) + "\n";
+      const mid = Math.max(1, Math.ceil(text.length / 2));
+      const a = text.slice(0, mid);
+      const b = text.slice(mid);
+      if (a) {
+        await delay(5);
+        yield { type: "stdout", text: a };
+      }
+      if (b) {
+        await delay(5);
+        yield { type: "stdout", text: b };
+      }
+      yield {
+        type: "result",
+        result: {
+          exitCode: 0,
+          stdout: text,
+          stderr: "",
+          durationMs: Date.now() - started,
+        },
+      };
+      return;
+    }
+
+    const result = this.exec(s, input);
+    if (result.stdout) yield { type: "stdout", text: result.stdout };
+    if (result.stderr) yield { type: "stderr", text: result.stderr };
+    yield { type: "result", result };
+  }
+
+  private exec(
+    s: FakeState,
+    input: RunCommandInput,
+  ): CommandResult {
     const started = Date.now();
     const cmd = input.cmd.trim();
 
@@ -140,11 +184,7 @@ export class FakeSandboxBackend implements SandboxBackend {
       return ok(started, list, "");
     }
 
-    return ok(
-      started,
-      `[fake] executed: ${cmd}\n`,
-      "",
-    );
+    return ok(started, `[fake] executed: ${cmd}\n`, "");
   }
 
   async writeFile(
@@ -219,4 +259,8 @@ function ok(started: number, stdout: string, stderr: string): CommandResult {
     stderr,
     durationMs: Date.now() - started,
   };
+}
+
+function delay(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
 }

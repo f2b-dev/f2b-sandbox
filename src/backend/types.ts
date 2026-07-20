@@ -1,5 +1,6 @@
 import type {
   CommandResult,
+  CommandStreamEvent,
   CreateSandboxInput,
   FileEntry,
   SandboxBackendKind,
@@ -17,6 +18,13 @@ export type BackendSandboxHandle = {
   status: SandboxStatus;
 };
 
+export type RunCommandInput = {
+  cmd: string;
+  cwd?: string;
+  timeoutMs?: number;
+  env?: Record<string, string>;
+};
+
 /** 沙箱数据面后端：fake 内存或生产集群 API */
 export interface SandboxBackend {
   readonly kind: SandboxBackendKind;
@@ -25,13 +33,15 @@ export interface SandboxBackend {
   kill(remoteId: string): Promise<void>;
   runCommand(
     remoteId: string,
-    input: {
-      cmd: string;
-      cwd?: string;
-      timeoutMs?: number;
-      env?: Record<string, string>;
-    },
+    input: RunCommandInput,
   ): Promise<CommandResult>;
+  /**
+   * 可选流式命令。未实现时服务层用 runCommand 结果拆成 stdout/stderr/result 事件。
+   */
+  streamCommand?(
+    remoteId: string,
+    input: RunCommandInput,
+  ): AsyncIterable<CommandStreamEvent>;
   writeFile(
     remoteId: string,
     path: string,
