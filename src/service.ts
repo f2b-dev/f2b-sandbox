@@ -14,6 +14,7 @@ import {
   countActiveSandboxes,
   getSandboxRow,
   insertSandbox,
+  listActiveSandboxesWithTimeout,
   listSandboxRows,
   recordSandboxUsage,
   summarizeUsage,
@@ -148,7 +149,10 @@ export async function createSandbox(raw: unknown): Promise<SandboxRecord> {
   }
 }
 
-export async function killSandbox(id: string): Promise<SandboxRecord> {
+export async function killSandbox(
+  id: string,
+  opts?: { reason?: string },
+): Promise<SandboxRecord> {
   const sb = await getSandbox(id);
   if (TERMINAL.includes(sb.status)) {
     return sb;
@@ -171,8 +175,71 @@ export async function killSandbox(id: string): Promise<SandboxRecord> {
   return updateSandbox(id, {
     status: "killed",
     finishedAt: new Date().toISOString(),
-    error: null,
+    error: opts?.reason ?? null,
   })!;
+}
+
+/** 扫表回收 timeoutMs 已到期的活动沙箱；返回被 kill 的 id 列表 */
+export async function reapExpiredSandboxes(
+  nowMs = Date.now(),
+): Promise<string[]> {
+  const candidates = listActiveSandboxesWithTimeout();
+  const killed: string[] = [];
+  for (const sb of candidates) {
+    if (sb.timeoutMs == null || sb.timeoutMs <= 0) continue;
+    const start = Date.parse(sb.startedAt ?? sb.createdAt);
+    if (Number.isNaN(start)) continue;
+    if (nowMs < start + sb.timeoutMs) continue;
+    try {
+      await killSandbox(sb.id, { reason: "timeout exceeded" });
+      killed.push(sb.id);
+    } catch (err) {
+      console.error(
+        `[reaper] failed to kill ${sb.id}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  return killed;
+}
+
+/**
+ * 启动周期回收器。
+ * F2B_TIMEOUT_REAPER_MS：扫描间隔，默认 2000；≤0 关闭。
+ */
+export function startTimeoutReaper(): { stop: () => void } | null {
+  const raw = process.env.F2B_TIMEOUT_REAPER_MS?.trim();
+  const intervalMs = raw === undefined || raw === "" ? 2000 : Number(raw);
+  if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+    console.log("[reaper] disabled (F2B_TIMEOUT_REAPER_MS<=0)");
+    return null;
+  }
+  let running = false;
+  const tick = async () => {
+    if (running) return;
+    running = true;
+    try {
+      const ids = await reapExpiredSandboxes();
+      if (ids.length) {
+        console.log(`[reaper] killed ${ids.length}: ${ids.join(", ")}`);
+      }
+    } catch (err) {
+      console.error(
+        "[reaper] tick error:",
+        err instanceof Error ? err.message : err,
+      );
+    } finally {
+      running = false;
+    }
+  };
+  // 启动立即扫一次（重启后清遗留超时实例）
+  void tick();
+  const handle = setInterval(() => void tick(), intervalMs);
+  if (typeof handle.unref === "function") handle.unref();
+  console.log(`[reaper] started intervalMs=${intervalMs}`);
+  return {
+    stop: () => clearInterval(handle),
+  };
 }
 
 export async function runSandboxCommand(id: string, raw: unknown) {

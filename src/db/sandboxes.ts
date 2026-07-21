@@ -86,6 +86,22 @@ export function countActiveSandboxes(): number {
   return row?.n ?? 0;
 }
 
+/** 带 timeout_ms 的活动沙箱（供到期回收扫表） */
+export function listActiveSandboxesWithTimeout(): SandboxRecord[] {
+  const db = getDb();
+  const placeholders = ACTIVE_STATUSES.map(() => "?").join(", ");
+  const rows = db.all<SandboxRow>(
+    `SELECT * FROM sandboxes
+     WHERE status IN (${placeholders})
+       AND timeout_ms IS NOT NULL
+       AND timeout_ms > 0
+     ORDER BY created_at ASC
+     LIMIT 500`,
+    [...ACTIVE_STATUSES],
+  );
+  return rows.map(rowToSandboxRecord);
+}
+
 export function getSandboxRow(id: string): SandboxRecord | null {
   const db = getDb();
   const row = db.get<SandboxRow>(`SELECT * FROM sandboxes WHERE id = ?`, [id]);

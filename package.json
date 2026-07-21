@@ -15,6 +15,7 @@
     "smoke:cube": "tsx scripts/smoke-cube.ts",
     "smoke:capacity": "tsx scripts/smoke-capacity.ts",
     "smoke:usage": "tsx scripts/smoke-usage.ts",
+    "smoke:timeout": "tsx scripts/smoke-timeout.ts",
     "mock:cube": "tsx scripts/mock-cube-envd.ts",
     "ci:contract": "bash scripts/ci-contract.sh",
     "docker:build": "docker build -f Dockerfile -t ghcr.io/f2b-dev/sandbox:local .."

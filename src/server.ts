@@ -22,6 +22,7 @@ import {
   readSandboxFile,
   resolveMaxConcurrentSandboxes,
   runSandboxCommand,
+  startTimeoutReaper,
   streamSandboxCommand,
   writeSandboxFile,
 } from "./service";
@@ -295,4 +296,5 @@ nodeServer.listen(port, host, () => {
   console.log(
     `f2b-sandbox listening on http://${host}:${port} backend=${backend.kind} auth=${resolveAuthMode()} db=${resolveDatabasePath()}`,
   );
+  startTimeoutReaper();
 });

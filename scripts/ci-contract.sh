@@ -89,6 +89,21 @@ F2B_SANDBOX_URL="http://127.0.0.1:${CAP_PORT}" pnpm smoke:capacity
 echo "== smoke:usage =="
 F2B_SANDBOX_URL="http://127.0.0.1:${CAP_PORT}" pnpm smoke:usage
 
+TO_PORT="${F2B_CI_TIMEOUT_PORT:-19790}"
+echo "== start fake (reaper 500ms) :$TO_PORT =="
+F2B_SANDBOX_BACKEND=fake \
+  F2B_AUTH_MODE=off \
+  F2B_TIMEOUT_REAPER_MS=500 \
+  PORT="$TO_PORT" \
+  HOST=127.0.0.1 \
+  DATABASE_URL="file:${ROOT}/data/ci-contract-timeout.db" \
+  pnpm exec tsx src/server.ts &
+PIDS+=($!)
+wait_health "http://127.0.0.1:${TO_PORT}" "off"
+
+echo "== smoke:timeout =="
+F2B_SANDBOX_URL="http://127.0.0.1:${TO_PORT}" pnpm smoke:timeout
+
 CUBE_PORT="${F2B_CI_CUBE_PORT:-18991}"
 ENVD_PORT="${F2B_CI_ENVD_PORT:-18992}"
 
