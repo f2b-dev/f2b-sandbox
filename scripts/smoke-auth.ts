@@ -2,7 +2,7 @@
  * 鉴权冒烟：开启 F2B_AUTH_MODE=api_key 的服务上
  * create key → 无密钥 401 → 有密钥 create/kill → 吊销后 401
  */
-const base = process.env.F2B_SANDBOX_URL ?? "http://127.0.0.1:8787";
+const base = process.env.F2B_SANDBOX_URL ?? "http://127.0.0.1:13287";
 const admin = process.env.F2B_ADMIN_TOKEN;
 
 function adminHeaders(json = false): Record<string, string> {

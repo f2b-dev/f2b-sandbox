@@ -3,7 +3,7 @@
  * 在 limit=1 时第二路 create 应返回 CAPACITY_EXCEEDED (429)。
  * 需外部已启动服务，或本脚本自启临时实例。
  */
-const base = process.env.F2B_SANDBOX_URL ?? "http://127.0.0.1:8787";
+const base = process.env.F2B_SANDBOX_URL ?? "http://127.0.0.1:13287";
 const apiKey = process.env.F2B_API_KEY;
 
 function headers(json = false): Record<string, string> {

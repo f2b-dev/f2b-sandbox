@@ -1,5 +1,5 @@
 /** SSE 命令流冒烟：create → stream echo → 收齐 stdout/result → kill */
-const base = process.env.F2B_SANDBOX_URL ?? "http://127.0.0.1:8787";
+const base = process.env.F2B_SANDBOX_URL ?? "http://127.0.0.1:13287";
 const apiKey = process.env.F2B_API_KEY;
 
 function headers(json = false): Record<string, string> {

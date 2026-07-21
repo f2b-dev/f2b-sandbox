@@ -12,11 +12,11 @@ pnpm migrate   # 或启动时自动建表
 F2B_SANDBOX_BACKEND=fake pnpm dev
 ```
 
-默认监听 `http://0.0.0.0:8787`，**`F2B_AUTH_MODE=off`**（本地 / BFF 内网免密钥）。
+默认监听 `http://0.0.0.0:13287`，**`F2B_AUTH_MODE=off`**（本地 / BFF 内网免密钥）。
 
 ```bash
-curl -s http://127.0.0.1:8787/healthz
-curl -s -X POST http://127.0.0.1:8787/v1/sandboxes \
+curl -s http://127.0.0.1:13287/healthz
+curl -s -X POST http://127.0.0.1:13287/v1/sandboxes \
   -H 'content-type: application/json' \
   -d '{"template":"base"}'
 ```
@@ -36,14 +36,14 @@ curl -s -X POST http://127.0.0.1:8787/v1/sandboxes \
 F2B_AUTH_MODE=api_key F2B_ADMIN_TOKEN=dev-admin F2B_SANDBOX_BACKEND=fake pnpm dev
 
 # 创建密钥（明文只返回一次）
-curl -s -X POST http://127.0.0.1:8787/v1/api-keys \
+curl -s -X POST http://127.0.0.1:13287/v1/api-keys \
   -H 'content-type: application/json' \
   -H 'x-f2b-admin-token: dev-admin' \
   -d '{"name":"ci"}'
 # → { "key": { "id", "keyPrefix", ... }, "secret": "sk_live_…" }
 
 # 业务调用
-curl -s http://127.0.0.1:8787/v1/sandboxes \
+curl -s http://127.0.0.1:13287/v1/sandboxes \
   -H "authorization: Bearer sk_live_…"
 ```
 
@@ -87,7 +87,7 @@ GitHub Actions：`.github/workflows/ci.yml`（契约 + 镜像；`main` 推送 `g
 pnpm docker:build
 # 等价：docker build -f f2b-sandbox/Dockerfile -t ghcr.io/f2b-dev/sandbox:local .
 
-docker run --rm -p 8787:8787 \
+docker run --rm -p 13287:13287 \
   -e F2B_SANDBOX_BACKEND=fake \
   -e F2B_AUTH_MODE=off \
   ghcr.io/f2b-dev/sandbox:local

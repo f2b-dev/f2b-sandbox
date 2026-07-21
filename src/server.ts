@@ -26,7 +26,7 @@ import {
 } from "./service";
 import { json, jsonError, readJson, writeSse } from "./http";
 
-const port = Number(process.env.PORT ?? 8787);
+const port = Number(process.env.PORT ?? 13287);
 const host = process.env.HOST ?? "0.0.0.0";
 
 function notFound() {
