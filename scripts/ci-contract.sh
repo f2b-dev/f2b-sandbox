@@ -70,6 +70,22 @@ wait_health "$AUTH_BASE" "api_key"
 echo "== smoke:auth =="
 F2B_SANDBOX_URL="$AUTH_BASE" F2B_ADMIN_TOKEN="$ADMIN_TOKEN" pnpm smoke:auth
 
+# 避开本机常见占用（如 18789 被其它本地服务占用）
+CAP_PORT="${F2B_CI_CAP_PORT:-19789}"
+echo "== start fake (max concurrent=1) :$CAP_PORT =="
+F2B_SANDBOX_BACKEND=fake \
+  F2B_AUTH_MODE=off \
+  F2B_MAX_CONCURRENT_SANDBOXES=1 \
+  PORT="$CAP_PORT" \
+  HOST=127.0.0.1 \
+  DATABASE_URL="file:${ROOT}/data/ci-contract-cap.db" \
+  pnpm exec tsx src/server.ts &
+PIDS+=($!)
+wait_health "http://127.0.0.1:${CAP_PORT}" "off"
+
+echo "== smoke:capacity =="
+F2B_SANDBOX_URL="http://127.0.0.1:${CAP_PORT}" pnpm smoke:capacity
+
 CUBE_PORT="${F2B_CI_CUBE_PORT:-18991}"
 ENVD_PORT="${F2B_CI_ENVD_PORT:-18992}"
 

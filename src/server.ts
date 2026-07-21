@@ -19,6 +19,7 @@ import {
   listSandboxFiles,
   listSandboxes,
   readSandboxFile,
+  resolveMaxConcurrentSandboxes,
   runSandboxCommand,
   streamSandboxCommand,
   writeSandboxFile,
@@ -40,12 +41,14 @@ async function handler(req: Request): Promise<Response> {
   try {
     if (method === "GET" && (pathname === "/healthz" || pathname === "/")) {
       const backend = createSandboxBackend();
+      const maxConcurrent = resolveMaxConcurrentSandboxes();
       return json({
         ok: true,
         service: "f2b-sandbox",
         backend: backend.kind,
         auth: resolveAuthMode(),
         db: resolveDatabasePath(),
+        ...(maxConcurrent !== null ? { maxConcurrentSandboxes: maxConcurrent } : {}),
       });
     }
 

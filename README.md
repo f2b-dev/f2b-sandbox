@@ -65,7 +65,8 @@ pnpm smoke:auth         # 需 auth=api_key + F2B_ADMIN_TOKEN
 pnpm smoke:stream       # SSE 流式命令
 pnpm mock:cube          # 本地 mock CubeAPI(:18991) + envd(:18992)
 pnpm smoke:cube         # 校准后的 cube/envd adapter（需 mock 或真集群）
-pnpm ci:contract        # typecheck + fake 冒烟 + mock cube 契约 → CONTRACT_CI_OK
+pnpm smoke:capacity     # 需 F2B_MAX_CONCURRENT_SANDBOXES>0 → CAPACITY_EXCEEDED
+pnpm ci:contract        # typecheck + fake/auth/capacity + mock cube → CONTRACT_CI_OK
 ```
 
 GitHub Actions：`.github/workflows/ci.yml`（契约 + 镜像；`main` 推送 `ghcr.io/f2b-dev/sandbox`）。
@@ -91,6 +92,15 @@ docker run --rm -p 8787:8787 \
   -e F2B_AUTH_MODE=off \
   ghcr.io/f2b-dev/sandbox:local
 ```
+
+## 并发硬顶（单机）
+
+| 变量 | 说明 |
+|------|------|
+| `F2B_MAX_CONCURRENT_SANDBOXES` | 限制 `provisioning`+`running`+`paused` 个数；未设或 ≤0 **不限制** |
+
+超限：`POST /v1/sandboxes` → **429** `CAPACITY_EXCEEDED`（`details.active` / `details.max`）。  
+分档建议见 f2b-docs `architecture/capacity`。
 
 ## 环境变量
 

@@ -72,6 +72,20 @@ export function listSandboxRows(projectId?: string): SandboxRecord[] {
   return rows.map(rowToSandboxRecord);
 }
 
+/** 占用并发槽位的状态：创建中 / 运行中 / 暂停 */
+const ACTIVE_STATUSES = ["provisioning", "running", "paused"] as const;
+
+/** 当前占用并发槽的沙箱数（全机；单节点 all-in-one 硬顶） */
+export function countActiveSandboxes(): number {
+  const db = getDb();
+  const placeholders = ACTIVE_STATUSES.map(() => "?").join(", ");
+  const row = db.get<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM sandboxes WHERE status IN (${placeholders})`,
+    [...ACTIVE_STATUSES],
+  );
+  return row?.n ?? 0;
+}
+
 export function getSandboxRow(id: string): SandboxRecord | null {
   const db = getDb();
   const row = db.get<SandboxRow>(`SELECT * FROM sandboxes WHERE id = ?`, [id]);

@@ -11,6 +11,7 @@ import {
   type SandboxStatus,
 } from "@f2b/spec";
 import {
+  countActiveSandboxes,
   getSandboxRow,
   insertSandbox,
   listSandboxRows,
@@ -25,6 +26,34 @@ import {
 
 function getBackend(): SandboxBackend {
   return createSandboxBackend();
+}
+
+/**
+ * 单机并发硬顶。未设置或 ≤0 表示不限制（开发默认）。
+ * 与 capacity 文档分档对齐，例如低配入门 2、推荐入门 5。
+ */
+export function resolveMaxConcurrentSandboxes(): number | null {
+  const raw = process.env.F2B_MAX_CONCURRENT_SANDBOXES?.trim();
+  if (!raw) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.floor(n);
+}
+
+function assertCapacityAvailable() {
+  const max = resolveMaxConcurrentSandboxes();
+  if (max === null) return;
+  const active = countActiveSandboxes();
+  if (active >= max) {
+    throw new F2bError(
+      ErrorCode.CAPACITY_EXCEEDED,
+      `concurrent sandbox limit reached (${active}/${max})`,
+      {
+        status: 429,
+        details: { active, max },
+      },
+    );
+  }
 }
 
 export function resetSandboxBackendForTests() {
@@ -73,6 +102,8 @@ export async function createSandbox(raw: unknown): Promise<SandboxRecord> {
       details: parsed.error.flatten(),
     });
   }
+  // 在写入 provisioning 行之前检查，避免失败行占槽
+  assertCapacityAvailable();
   const input: CreateSandboxInput = parsed.data;
   const id = `sbx_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
   const name = input.name?.trim() || `sandbox-${id.slice(4, 10)}`;
