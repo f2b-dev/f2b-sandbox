@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS sandbox_usage (
   id TEXT PRIMARY KEY,
   sandbox_id TEXT NOT NULL REFERENCES sandboxes(id),
   duration_ms INTEGER NOT NULL,
+  commands INTEGER NOT NULL DEFAULT 0,
+  kind TEXT NOT NULL DEFAULT 'lifetime',
   created_at TEXT NOT NULL
 );
 
@@ -56,5 +58,18 @@ const dbPath = resolveDbPath();
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 const db = new DatabaseSync(dbPath);
 db.exec(SQL);
+const cols = (
+  db.prepare("PRAGMA table_info(sandbox_usage)").all() as { name: string }[]
+).map((c) => c.name);
+if (!cols.includes("commands")) {
+  db.exec(
+    "ALTER TABLE sandbox_usage ADD COLUMN commands INTEGER NOT NULL DEFAULT 0",
+  );
+}
+if (!cols.includes("kind")) {
+  db.exec(
+    "ALTER TABLE sandbox_usage ADD COLUMN kind TEXT NOT NULL DEFAULT 'lifetime'",
+  );
+}
 db.close();
 console.log(`Migrated database at ${dbPath}`);

@@ -15,6 +15,7 @@ import {
 import {
   createSandbox,
   getSandbox,
+  getUsageSummary,
   killSandbox,
   listSandboxFiles,
   listSandboxes,
@@ -97,6 +98,15 @@ async function handler(req: Request): Promise<Response> {
     // --- 沙箱产品 API：按 F2B_AUTH_MODE 鉴权 ---
     if (pathname.startsWith("/v1/")) {
       authenticateRequest(req);
+    }
+
+    if (pathname === "/v1/usage" && method === "GET") {
+      const daysRaw = url.searchParams.get("days");
+      const days = daysRaw ? Number(daysRaw) : 7;
+      const usage = getUsageSummary(
+        Number.isFinite(days) ? days : 7,
+      );
+      return json({ usage });
     }
 
     if (pathname === "/v1/sandboxes") {

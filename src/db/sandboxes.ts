@@ -167,11 +167,94 @@ export function updateSandbox(
   return getSandboxRow(id);
 }
 
-export function recordSandboxUsage(sandboxId: string, durationMs: number) {
+export type UsageKind = "lifetime" | "command";
+
+/** 记一笔用量：lifetime=沙箱存活时长；command=命令次数（duration 可为 0） */
+export function recordSandboxUsage(
+  sandboxId: string,
+  durationMs: number,
+  opts?: { commands?: number; kind?: UsageKind },
+) {
   const db = getDb();
+  const commands = opts?.commands ?? 0;
+  const kind = opts?.kind ?? (commands > 0 ? "command" : "lifetime");
   db.run(
-    `INSERT INTO sandbox_usage (id, sandbox_id, duration_ms, created_at)
-     VALUES (?, ?, ?, ?)`,
-    [crypto.randomUUID(), sandboxId, durationMs, now()],
+    `INSERT INTO sandbox_usage (id, sandbox_id, duration_ms, commands, kind, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [crypto.randomUUID(), sandboxId, durationMs, commands, kind, now()],
   );
+}
+
+export type UsageDayBucket = {
+  day: string;
+  sandboxHours: number;
+  commands: number;
+  durationMs: number;
+};
+
+export type UsageSummary = {
+  days: number;
+  totalDurationMs: number;
+  totalSandboxHours: number;
+  totalCommands: number;
+  byDay: UsageDayBucket[];
+};
+
+/** 按 UTC 日期聚合近 N 天用量（含无数据日补 0） */
+export function summarizeUsage(days = 7): UsageSummary {
+  const n = Math.min(90, Math.max(1, Math.floor(days)));
+  const db = getDb();
+  const since = new Date();
+  since.setUTCHours(0, 0, 0, 0);
+  since.setUTCDate(since.getUTCDate() - (n - 1));
+  const sinceIso = since.toISOString();
+
+  const rows = db.all<{
+    day: string;
+    duration_ms: number | bigint;
+    commands: number | bigint;
+  }>(
+    `SELECT substr(created_at, 1, 10) AS day,
+            COALESCE(SUM(duration_ms), 0) AS duration_ms,
+            COALESCE(SUM(commands), 0) AS commands
+     FROM sandbox_usage
+     WHERE created_at >= ?
+     GROUP BY substr(created_at, 1, 10)
+     ORDER BY day ASC`,
+    [sinceIso],
+  );
+
+  const map = new Map<string, { durationMs: number; commands: number }>();
+  for (const r of rows) {
+    map.set(r.day, {
+      durationMs: Number(r.duration_ms),
+      commands: Number(r.commands),
+    });
+  }
+
+  const byDay: UsageDayBucket[] = [];
+  let totalDurationMs = 0;
+  let totalCommands = 0;
+  for (let i = 0; i < n; i++) {
+    const d = new Date(since);
+    d.setUTCDate(since.getUTCDate() + i);
+    const day = d.toISOString().slice(0, 10);
+    const hit = map.get(day) ?? { durationMs: 0, commands: 0 };
+    totalDurationMs += hit.durationMs;
+    totalCommands += hit.commands;
+    byDay.push({
+      day,
+      durationMs: hit.durationMs,
+      sandboxHours: hit.durationMs / 3_600_000,
+      commands: hit.commands,
+    });
+  }
+
+  return {
+    days: n,
+    totalDurationMs,
+    totalSandboxHours: totalDurationMs / 3_600_000,
+    totalCommands,
+    byDay,
+  };
 }

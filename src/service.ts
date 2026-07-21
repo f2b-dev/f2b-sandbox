@@ -16,7 +16,9 @@ import {
   insertSandbox,
   listSandboxRows,
   recordSandboxUsage,
+  summarizeUsage,
   updateSandbox,
+  type UsageSummary,
 } from "./db/sandboxes";
 import {
   createSandboxBackend,
@@ -183,7 +185,12 @@ export async function runSandboxCommand(id: string, raw: unknown) {
     });
   }
   try {
-    return await getBackend().runCommand(sb.remoteId!, parsed.data);
+    const result = await getBackend().runCommand(sb.remoteId!, parsed.data);
+    recordSandboxUsage(id, result.durationMs ?? 0, {
+      commands: 1,
+      kind: "command",
+    });
+    return result;
   } catch (err) {
     if (err instanceof F2bError) throw err;
     throw new F2bError(
@@ -208,14 +215,25 @@ export async function* streamSandboxCommand(
     });
   }
   const backend = getBackend();
+  let counted = false;
+  const countOnce = (durationMs = 0) => {
+    if (counted) return;
+    counted = true;
+    recordSandboxUsage(id, durationMs, { commands: 1, kind: "command" });
+  };
   try {
     if (backend.streamCommand) {
       for await (const ev of backend.streamCommand(sb.remoteId!, parsed.data)) {
+        if (ev.type === "result") {
+          countOnce(ev.result?.durationMs ?? 0);
+        }
         yield ev;
       }
+      countOnce(0);
       return;
     }
     const result = await backend.runCommand(sb.remoteId!, parsed.data);
+    countOnce(result.durationMs ?? 0);
     if (result.stdout) yield { type: "stdout", text: result.stdout };
     if (result.stderr) yield { type: "stderr", text: result.stderr };
     yield { type: "result", result };
@@ -234,6 +252,10 @@ export async function* streamSandboxCommand(
       message: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+export function getUsageSummary(days = 7): UsageSummary {
+  return summarizeUsage(days);
 }
 
 export async function writeSandboxFile(id: string, raw: unknown) {

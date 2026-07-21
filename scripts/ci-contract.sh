@@ -86,6 +86,9 @@ wait_health "http://127.0.0.1:${CAP_PORT}" "off"
 echo "== smoke:capacity =="
 F2B_SANDBOX_URL="http://127.0.0.1:${CAP_PORT}" pnpm smoke:capacity
 
+echo "== smoke:usage =="
+F2B_SANDBOX_URL="http://127.0.0.1:${CAP_PORT}" pnpm smoke:usage
+
 CUBE_PORT="${F2B_CI_CUBE_PORT:-18991}"
 ENVD_PORT="${F2B_CI_ENVD_PORT:-18992}"
 
