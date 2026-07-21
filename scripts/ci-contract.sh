@@ -56,6 +56,9 @@ F2B_SANDBOX_URL="$BASE" pnpm smoke
 echo "== smoke:templates =="
 F2B_SANDBOX_URL="$BASE" pnpm smoke:templates
 
+echo "== smoke:pause =="
+F2B_SANDBOX_URL="$BASE" pnpm smoke:pause
+
 echo "== smoke:stream =="
 F2B_SANDBOX_URL="$BASE" pnpm smoke:stream
 

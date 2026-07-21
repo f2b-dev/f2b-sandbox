@@ -35,6 +35,10 @@ export interface SandboxBackend {
   create(req: CreateSandboxBackendRequest): Promise<BackendSandboxHandle>;
   get(remoteId: string): Promise<BackendSandboxHandle | null>;
   kill(remoteId: string): Promise<void>;
+  /** 可选：暂停沙箱（fake 全支持；Cube 视集群能力） */
+  pause?(remoteId: string): Promise<BackendSandboxHandle>;
+  /** 可选：从暂停恢复 */
+  resume?(remoteId: string): Promise<BackendSandboxHandle>;
   runCommand(
     remoteId: string,
     input: RunCommandInput,

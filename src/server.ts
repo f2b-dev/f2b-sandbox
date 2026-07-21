@@ -20,8 +20,10 @@ import {
   listSandboxFiles,
   listSandboxes,
   listTemplates,
+  pauseSandbox,
   readSandboxFile,
   resolveMaxConcurrentSandboxes,
+  resumeSandbox,
   runSandboxCommand,
   startTimeoutReaper,
   streamSandboxCommand,
@@ -139,6 +141,20 @@ async function handler(req: Request): Promise<Response> {
         const sandbox = await killSandbox(id);
         return json({ sandbox });
       }
+    }
+
+    const pauseMatch = pathname.match(/^\/v1\/sandboxes\/([^/]+)\/pause$/);
+    if (pauseMatch && method === "POST") {
+      const id = decodeURIComponent(pauseMatch[1]!);
+      const sandbox = await pauseSandbox(id);
+      return json({ sandbox });
+    }
+
+    const resumeMatch = pathname.match(/^\/v1\/sandboxes\/([^/]+)\/resume$/);
+    if (resumeMatch && method === "POST") {
+      const id = decodeURIComponent(resumeMatch[1]!);
+      const sandbox = await resumeSandbox(id);
+      return json({ sandbox });
     }
 
     const cmdStreamMatch = pathname.match(

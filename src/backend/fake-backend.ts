@@ -86,11 +86,34 @@ export class FakeSandboxBackend implements SandboxBackend {
     this.sessions.delete(remoteId);
   }
 
+  async pause(remoteId: string): Promise<BackendSandboxHandle> {
+    const s = this.require(remoteId);
+    if (s.handle.status === "paused") return s.handle;
+    if (s.handle.status !== "running") {
+      throw new Error(`cannot pause sandbox in status ${s.handle.status}`);
+    }
+    s.handle = { ...s.handle, status: "paused" };
+    return s.handle;
+  }
+
+  async resume(remoteId: string): Promise<BackendSandboxHandle> {
+    const s = this.require(remoteId);
+    if (s.handle.status === "running") return s.handle;
+    if (s.handle.status !== "paused") {
+      throw new Error(`cannot resume sandbox in status ${s.handle.status}`);
+    }
+    s.handle = { ...s.handle, status: "running" };
+    return s.handle;
+  }
+
   async runCommand(
     remoteId: string,
     input: RunCommandInput,
   ): Promise<CommandResult> {
     const s = this.require(remoteId);
+    if (s.handle.status === "paused") {
+      throw new Error("sandbox is paused");
+    }
     return this.exec(s, input);
   }
 
@@ -99,6 +122,14 @@ export class FakeSandboxBackend implements SandboxBackend {
     input: RunCommandInput,
   ): AsyncIterable<CommandStreamEvent> {
     const s = this.require(remoteId);
+    if (s.handle.status === "paused") {
+      yield {
+        type: "error",
+        code: "SANDBOX_NOT_RUNNING",
+        message: "sandbox is paused",
+      };
+      return;
+    }
     const started = Date.now();
     const cmd = input.cmd.trim();
 

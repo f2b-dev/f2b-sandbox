@@ -74,7 +74,8 @@ function assertRunning(sb: SandboxRecord) {
       `sandbox ${sb.id} is ${sb.status}`,
     );
   }
-  if (sb.status !== "running" && sb.status !== "paused") {
+  // 命令/文件仅允许 running；paused 需先 resume
+  if (sb.status !== "running") {
     throw new F2bError(
       ErrorCode.SANDBOX_NOT_RUNNING,
       `sandbox ${sb.id} is ${sb.status}`,
@@ -149,6 +150,80 @@ export async function createSandbox(raw: unknown): Promise<SandboxRecord> {
       ? err
       : new F2bError(ErrorCode.BACKEND_UNAVAILABLE, message, { cause: err });
   }
+}
+
+export async function pauseSandbox(id: string): Promise<SandboxRecord> {
+  const sb = await getSandbox(id);
+  if (TERMINAL.includes(sb.status)) {
+    throw new F2bError(
+      ErrorCode.SANDBOX_ALREADY_TERMINAL,
+      `sandbox ${sb.id} is ${sb.status}`,
+    );
+  }
+  if (sb.status === "paused") return sb;
+  if (sb.status !== "running" || !sb.remoteId) {
+    throw new F2bError(
+      ErrorCode.SANDBOX_NOT_RUNNING,
+      `sandbox ${sb.id} is ${sb.status}`,
+    );
+  }
+  const backend = getBackend();
+  if (!backend.pause) {
+    throw new F2bError(
+      ErrorCode.BACKEND_UNAVAILABLE,
+      `pause not supported by backend ${backend.kind}`,
+      { status: 501 },
+    );
+  }
+  try {
+    await backend.pause(sb.remoteId);
+  } catch (err) {
+    throw err instanceof F2bError
+      ? err
+      : new F2bError(
+          ErrorCode.BACKEND_UNAVAILABLE,
+          err instanceof Error ? err.message : String(err),
+          { cause: err },
+        );
+  }
+  return updateSandbox(id, { status: "paused", error: null })!;
+}
+
+export async function resumeSandbox(id: string): Promise<SandboxRecord> {
+  const sb = await getSandbox(id);
+  if (TERMINAL.includes(sb.status)) {
+    throw new F2bError(
+      ErrorCode.SANDBOX_ALREADY_TERMINAL,
+      `sandbox ${sb.id} is ${sb.status}`,
+    );
+  }
+  if (sb.status === "running") return sb;
+  if (sb.status !== "paused" || !sb.remoteId) {
+    throw new F2bError(
+      ErrorCode.SANDBOX_NOT_RUNNING,
+      `sandbox ${sb.id} is ${sb.status}`,
+    );
+  }
+  const backend = getBackend();
+  if (!backend.resume) {
+    throw new F2bError(
+      ErrorCode.BACKEND_UNAVAILABLE,
+      `resume not supported by backend ${backend.kind}`,
+      { status: 501 },
+    );
+  }
+  try {
+    await backend.resume(sb.remoteId);
+  } catch (err) {
+    throw err instanceof F2bError
+      ? err
+      : new F2bError(
+          ErrorCode.BACKEND_UNAVAILABLE,
+          err instanceof Error ? err.message : String(err),
+          { cause: err },
+        );
+  }
+  return updateSandbox(id, { status: "running", error: null })!;
 }
 
 export async function killSandbox(
