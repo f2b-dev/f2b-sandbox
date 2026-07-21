@@ -53,6 +53,9 @@ wait_health "$BASE" "off"
 echo "== smoke =="
 F2B_SANDBOX_URL="$BASE" pnpm smoke
 
+echo "== smoke:templates =="
+F2B_SANDBOX_URL="$BASE" pnpm smoke:templates
+
 echo "== smoke:stream =="
 F2B_SANDBOX_URL="$BASE" pnpm smoke:stream
 

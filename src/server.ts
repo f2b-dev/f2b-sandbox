@@ -19,6 +19,7 @@ import {
   killSandbox,
   listSandboxFiles,
   listSandboxes,
+  listTemplates,
   readSandboxFile,
   resolveMaxConcurrentSandboxes,
   runSandboxCommand,
@@ -108,6 +109,10 @@ async function handler(req: Request): Promise<Response> {
         Number.isFinite(days) ? days : 7,
       );
       return json({ usage });
+    }
+
+    if (pathname === "/v1/templates" && method === "GET") {
+      return json({ templates: listTemplates() });
     }
 
     if (pathname === "/v1/sandboxes") {

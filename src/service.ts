@@ -1,4 +1,5 @@
 import {
+  BUILTIN_TEMPLATES,
   CreateSandboxSchema,
   ErrorCode,
   F2bError,
@@ -9,6 +10,7 @@ import {
   type CreateSandboxInput,
   type SandboxRecord,
   type SandboxStatus,
+  type TemplateRef,
 } from "@f2b/spec";
 import {
   countActiveSandboxes,
@@ -323,6 +325,14 @@ export async function* streamSandboxCommand(
 
 export function getUsageSummary(days = 7): UsageSummary {
   return summarizeUsage(days);
+}
+
+/** 预置模板目录（与 @f2b/spec BUILTIN_TEMPLATES 同源） */
+export function listTemplates(): TemplateRef[] {
+  return BUILTIN_TEMPLATES.map((t) => ({
+    ...t,
+    tags: [...t.tags],
+  }));
 }
 
 export async function writeSandboxFile(id: string, raw: unknown) {
