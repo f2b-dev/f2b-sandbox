@@ -6,16 +6,20 @@ import type {
   SandboxBackendKind,
   SandboxStatus,
 } from "@f2b/spec";
+import type { EnvdSession } from "./envd-client";
 
 export type CreateSandboxBackendRequest = CreateSandboxInput & {
   sandboxId: string;
 };
 
+/** 数据面会话：控制面 remoteId + envd 访问信息（仅服务端） */
 export type BackendSandboxHandle = {
   sandboxId: string;
   remoteId: string;
   backend: SandboxBackendKind;
   status: SandboxStatus;
+  /** guest 内 envd；命令/文件经此，勿下发浏览器 */
+  envd?: EnvdSession;
 };
 
 export type RunCommandInput = {

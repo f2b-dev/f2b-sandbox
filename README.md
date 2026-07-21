@@ -63,10 +63,21 @@ curl -s http://127.0.0.1:8787/v1/sandboxes \
 pnpm smoke              # auth=off 或带 F2B_API_KEY
 pnpm smoke:auth         # 需 auth=api_key + F2B_ADMIN_TOKEN
 pnpm smoke:stream       # SSE 流式命令
-pnpm ci:contract        # 自起服务：typecheck + 上述冒烟 → CONTRACT_CI_OK
+pnpm mock:cube          # 本地 mock CubeAPI(:18991) + envd(:18992)
+pnpm smoke:cube         # 校准后的 cube/envd adapter（需 mock 或真集群）
+pnpm ci:contract        # typecheck + fake 冒烟 + mock cube 契约 → CONTRACT_CI_OK
 ```
 
 GitHub Actions：`.github/workflows/ci.yml`（契约 + 镜像；`main` 推送 `ghcr.io/f2b-dev/sandbox`）。
+
+## 数据面（Cube 控制面 + envd）
+
+| 层 | 职责 |
+|----|------|
+| **CubeAPI** | 生命周期：`POST/GET/DELETE /sandboxes`（`templateID`、`timeout` 秒、`allow_internet_access`） |
+| **envd** | 命令 Connect `POST /process.Process/Start`；文件 `GET/POST /files`；列目录 `ListDir` |
+
+创建响应中的 `envdAccessToken` / `domain` **仅服务端**持有，不经 Control API 下发浏览器。无 KVM 时用 `pnpm mock:cube` + `pnpm smoke:cube` 验协议。
 
 ## 容器镜像
 

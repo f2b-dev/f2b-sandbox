@@ -4,29 +4,61 @@ import type {
   SandboxStatus,
 } from "@f2b/spec";
 import { ErrorCode, F2bError } from "@f2b/spec";
+import { EnvdClient, type EnvdSession } from "./envd-client";
 import type {
   BackendSandboxHandle,
   CreateSandboxBackendRequest,
+  RunCommandInput,
   SandboxBackend,
 } from "./types";
 
 export type CubeClientOptions = {
+  /** 控制面 CubeAPI 根 URL（仅服务端） */
   baseUrl: string;
-  /** 仅服务端使用；禁止进入浏览器 */
+  /** API Key；兼容 X-API-Key / Bearer */
   token?: string;
   fetchImpl?: typeof fetch;
+  /**
+   * 覆盖 envd 基址（联调 mock 时设为 mock envd URL）。
+   * 生产由 `{envdPort}-{sandboxID}.{domain}` 解析。
+   */
+  envdBaseUrl?: string;
+  envdScheme?: string;
+  /** 默认 cube.app；也可用 F2B_CUBE_SANDBOX_DOMAIN */
+  sandboxDomain?: string;
+  envdPort?: number;
+};
+
+type CubeSandboxWire = {
+  sandboxID?: string;
+  id?: string;
+  templateID?: string;
+  clientID?: string;
+  envdVersion?: string;
+  envdAccessToken?: string;
+  trafficAccessToken?: string;
+  domain?: string;
+  state?: string;
+  status?: string;
 };
 
 /**
- * CubeSandbox / data-plane API HTTP 客户端骨架。
- * 路径按 E2B 兼容风格预留；真集群联调时以官方 OpenAPI 校准。
- * 未配置 CUBE_API_URL 时不应实例化本类（用 FakeSandboxBackend）。
+ * 生产数据面客户端（CubeAPI 控制面 + envd guest 数据面）。
+ *
+ * - 生命周期：POST/GET/DELETE `/sandboxes`（E2B 兼容字段 templateID / sandboxID / allow_internet_access）
+ * - 命令 / 文件：envd（Connect `/process.Process/Start`、`/files`），**不是** CubeAPI `/commands`
+ * - 字段与路径以 CubeSandbox openapi.yml + 官方 Go SDK 为准
+ *
+ * 未配置 F2B_CUBE_API_URL 时不应实例化（用 FakeSandboxBackend）。
  */
 export class CubeSandboxBackend implements SandboxBackend {
   readonly kind = "cube" as const;
   private readonly baseUrl: string;
   private readonly token?: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly envd: EnvdClient;
+  /** remoteId → envd 会话（进程内缓存；重启后 get() 会再拉） */
+  private readonly sessions = new Map<string, EnvdSession>();
 
   constructor(opts: CubeClientOptions) {
     if (!opts.baseUrl) {
@@ -38,12 +70,23 @@ export class CubeSandboxBackend implements SandboxBackend {
     this.baseUrl = opts.baseUrl.replace(/\/$/, "");
     this.token = opts.token;
     this.fetchImpl = opts.fetchImpl ?? fetch;
+    this.envd = new EnvdClient({
+      baseUrl: opts.envdBaseUrl,
+      scheme: opts.envdScheme,
+      domain: opts.sandboxDomain,
+      envdPort: opts.envdPort,
+      fetchImpl: this.fetchImpl,
+    });
   }
 
   private headers(json = true): Record<string, string> {
     const h: Record<string, string> = {};
     if (json) h["Content-Type"] = "application/json";
-    if (this.token) h.Authorization = `Bearer ${this.token}`;
+    if (this.token) {
+      // Cube / E2B：X-API-Key 优先；同时带 Bearer 兼容
+      h["X-API-Key"] = this.token;
+      h.Authorization = `Bearer ${this.token}`;
+    }
     return h;
   }
 
@@ -51,7 +94,7 @@ export class CubeSandboxBackend implements SandboxBackend {
     method: string,
     path: string,
     body?: unknown,
-  ): Promise<T> {
+  ): Promise<{ status: number; data: T }> {
     let res: Response;
     try {
       res = await this.fetchImpl(`${this.baseUrl}${path}`, {
@@ -60,67 +103,109 @@ export class CubeSandboxBackend implements SandboxBackend {
         body: body !== undefined ? JSON.stringify(body) : undefined,
       });
     } catch (err) {
-      throw new F2bError(ErrorCode.BACKEND_UNAVAILABLE, "sandbox data-plane API unreachable", {
-        cause: err,
-      });
+      throw new F2bError(
+        ErrorCode.BACKEND_UNAVAILABLE,
+        "sandbox data-plane control API unreachable",
+        { cause: err },
+      );
+    }
+    if (res.status === 204) {
+      return { status: 204, data: undefined as T };
+    }
+    const text = await res.text().catch(() => "");
+    let data: T = undefined as T;
+    if (text) {
+      try {
+        data = JSON.parse(text) as T;
+      } catch {
+        data = text as unknown as T;
+      }
     }
     if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new F2bError(ErrorCode.BACKEND_UNAVAILABLE, `data-plane API ${res.status}`, {
-        status: res.status >= 500 ? 503 : res.status,
-        details: text.slice(0, 500),
-      });
+      throw new F2bError(
+        ErrorCode.BACKEND_UNAVAILABLE,
+        `data-plane API ${res.status}`,
+        {
+          status: res.status === 404 ? 404 : res.status >= 500 ? 503 : res.status,
+          details:
+            typeof data === "object" && data
+              ? data
+              : String(text).slice(0, 500),
+        },
+      );
     }
-    if (res.status === 204) return undefined as T;
-    return (await res.json()) as T;
+    return { status: res.status, data };
   }
 
-  async create(req: CreateSandboxBackendRequest): Promise<BackendSandboxHandle> {
-    // 预留 E2B 风格 POST /sandboxes；字段名待官方 schema 对齐
-    const data = await this.request<{
-      sandboxID?: string;
-      id?: string;
-      status?: string;
-    }>("POST", "/sandboxes", {
-      templateID: req.template,
-      timeout: req.timeoutMs ? Math.ceil(req.timeoutMs / 1000) : undefined,
-      metadata: {
-        ...(req.metadata ?? {}),
-        lingjing_sandbox_id: req.sandboxId,
-        lingjing_name: req.name ?? "",
-        allow_internet: String(req.allowInternetAccess),
-      },
-    });
+  private remember(session: EnvdSession) {
+    this.sessions.set(session.sandboxId, session);
+  }
+
+  private sessionFor(remoteId: string): EnvdSession {
+    const cached = this.sessions.get(remoteId);
+    if (cached) return cached;
+    return { sandboxId: remoteId };
+  }
+
+  private handleFromWire(
+    data: CubeSandboxWire,
+    localSandboxId: string,
+  ): BackendSandboxHandle {
     const remoteId = data.sandboxID ?? data.id;
     if (!remoteId) {
       throw new F2bError(
         ErrorCode.BACKEND_UNAVAILABLE,
-        "data-plane API create response missing sandbox id",
+        "data-plane create/get response missing sandboxID",
         { details: data },
       );
     }
+    const envd: EnvdSession = {
+      sandboxId: remoteId,
+      envdAccessToken: data.envdAccessToken,
+      domain: data.domain,
+      clientId: data.clientID,
+      envdVersion: data.envdVersion,
+    };
+    this.remember(envd);
     return {
-      sandboxId: req.sandboxId,
+      sandboxId: localSandboxId,
       remoteId,
       backend: this.kind,
-      status: mapCubeStatus(data.status) ?? "running",
+      status: mapCubeState(data.state ?? data.status) ?? "running",
+      envd,
     };
+  }
+
+  async create(req: CreateSandboxBackendRequest): Promise<BackendSandboxHandle> {
+    // NewSandbox：templateID 必填；allow_internet_access 为 SDK snake_case quirk
+    const body: Record<string, unknown> = {
+      templateID: req.template,
+      allow_internet_access: req.allowInternetAccess,
+      metadata: {
+        ...(req.metadata ?? {}),
+        f2b_sandbox_id: req.sandboxId,
+        f2b_name: req.name ?? "",
+      },
+    };
+    if (req.timeoutMs != null && req.timeoutMs > 0) {
+      body.timeout = Math.max(1, Math.ceil(req.timeoutMs / 1000));
+    }
+
+    const { data } = await this.request<CubeSandboxWire>(
+      "POST",
+      "/sandboxes",
+      body,
+    );
+    return this.handleFromWire(data, req.sandboxId);
   }
 
   async get(remoteId: string): Promise<BackendSandboxHandle | null> {
     try {
-      const data = await this.request<{
-        sandboxID?: string;
-        id?: string;
-        status?: string;
-      }>("GET", `/sandboxes/${encodeURIComponent(remoteId)}`);
-      const id = data.sandboxID ?? data.id ?? remoteId;
-      return {
-        sandboxId: id,
-        remoteId: id,
-        backend: this.kind,
-        status: mapCubeStatus(data.status) ?? "running",
-      };
+      const { data } = await this.request<CubeSandboxWire>(
+        "GET",
+        `/sandboxes/${encodeURIComponent(remoteId)}`,
+      );
+      return this.handleFromWire(data, remoteId);
     } catch (err) {
       if (err instanceof F2bError && err.status === 404) return null;
       throw err;
@@ -128,35 +213,44 @@ export class CubeSandboxBackend implements SandboxBackend {
   }
 
   async kill(remoteId: string): Promise<void> {
-    await this.request("DELETE", `/sandboxes/${encodeURIComponent(remoteId)}`);
+    try {
+      await this.request(
+        "DELETE",
+        `/sandboxes/${encodeURIComponent(remoteId)}`,
+      );
+    } finally {
+      this.sessions.delete(remoteId);
+    }
   }
 
   async runCommand(
     remoteId: string,
-    input: {
-      cmd: string;
-      cwd?: string;
-      timeoutMs?: number;
-      env?: Record<string, string>;
-    },
+    input: RunCommandInput,
   ): Promise<CommandResult> {
     const started = Date.now();
-    const data = await this.request<{
-      exitCode?: number;
-      stdout?: string;
-      stderr?: string;
-    }>("POST", `/sandboxes/${encodeURIComponent(remoteId)}/commands`, {
-      command: input.cmd,
-      cwd: input.cwd,
-      timeout: input.timeoutMs,
-      envs: input.env,
-    });
-    return {
-      exitCode: data.exitCode ?? 0,
-      stdout: data.stdout ?? "",
-      stderr: data.stderr ?? "",
-      durationMs: Date.now() - started,
-    };
+    const session = this.sessionFor(remoteId);
+    // 无 token 时尝试 refresh get
+    if (!session.envdAccessToken && !session.domain) {
+      await this.get(remoteId);
+    }
+    const s = this.sessionFor(remoteId);
+    try {
+      const result = await this.envd.runCommand(s, {
+        cmd: input.cmd,
+        cwd: input.cwd,
+        timeoutMs: input.timeoutMs,
+        env: input.env,
+      });
+      return {
+        exitCode: result.exitCode,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        durationMs: Date.now() - started,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new F2bError(ErrorCode.BACKEND_UNAVAILABLE, message, { cause: err });
+    }
   }
 
   async writeFile(
@@ -164,49 +258,52 @@ export class CubeSandboxBackend implements SandboxBackend {
     path: string,
     data: Uint8Array | string,
   ): Promise<void> {
-    const content =
-      typeof data === "string"
-        ? Buffer.from(data, "utf8").toString("base64")
-        : Buffer.from(data).toString("base64");
-    await this.request(
-      "POST",
-      `/sandboxes/${encodeURIComponent(remoteId)}/files`,
-      { path, content, encoding: "base64" },
-    );
+    const bytes =
+      typeof data === "string" ? new TextEncoder().encode(data) : data;
+    const session = this.sessionFor(remoteId);
+    try {
+      await this.envd.writeFile(session, path, bytes);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new F2bError(ErrorCode.BACKEND_UNAVAILABLE, message, { cause: err });
+    }
   }
 
   async readFile(remoteId: string, path: string): Promise<Uint8Array> {
-    const data = await this.request<{ content?: string; encoding?: string }>(
-      "GET",
-      `/sandboxes/${encodeURIComponent(remoteId)}/files?path=${encodeURIComponent(path)}`,
-    );
-    const raw = data.content ?? "";
-    if (data.encoding === "base64" || looksBase64(raw)) {
-      return Buffer.from(raw, "base64");
+    const session = this.sessionFor(remoteId);
+    try {
+      return await this.envd.readFile(session, path);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new F2bError(ErrorCode.BACKEND_UNAVAILABLE, message, { cause: err });
     }
-    return Buffer.from(raw, "utf8");
   }
 
   async listFiles(remoteId: string, path = "/"): Promise<FileEntry[]> {
-    const data = await this.request<{ entries?: FileEntry[] }>(
-      "GET",
-      `/sandboxes/${encodeURIComponent(remoteId)}/files/list?path=${encodeURIComponent(path)}`,
-    );
-    return data.entries ?? [];
+    const session = this.sessionFor(remoteId);
+    try {
+      const entries = await this.envd.listFiles(session, path);
+      return entries.map((e) => ({
+        path: e.path,
+        name: e.name,
+        type: e.isDir ? ("dir" as const) : ("file" as const),
+        size: e.size,
+      }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new F2bError(ErrorCode.BACKEND_UNAVAILABLE, message, { cause: err });
+    }
   }
 }
 
-function mapCubeStatus(s?: string): SandboxStatus | undefined {
+function mapCubeState(s?: string): SandboxStatus | undefined {
   if (!s) return undefined;
   const v = s.toLowerCase();
+  // Cube SandboxState: running | paused | pausing
   if (v === "running" || v === "ready") return "running";
-  if (v === "paused") return "paused";
+  if (v === "paused" || v === "pausing") return "paused";
   if (v === "killed" || v === "stopped") return "killed";
   if (v === "failed" || v === "error") return "failed";
   if (v === "provisioning" || v === "starting") return "provisioning";
   return undefined;
-}
-
-function looksBase64(s: string) {
-  return /^[A-Za-z0-9+/=\s]+$/.test(s) && s.length % 4 === 0 && s.length > 16;
 }

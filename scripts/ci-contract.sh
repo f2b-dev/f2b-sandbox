@@ -70,4 +70,32 @@ wait_health "$AUTH_BASE" "api_key"
 echo "== smoke:auth =="
 F2B_SANDBOX_URL="$AUTH_BASE" F2B_ADMIN_TOKEN="$ADMIN_TOKEN" pnpm smoke:auth
 
+CUBE_PORT="${F2B_CI_CUBE_PORT:-18991}"
+ENVD_PORT="${F2B_CI_ENVD_PORT:-18992}"
+
+echo "== start mock CubeAPI + envd :$CUBE_PORT / :$ENVD_PORT =="
+F2B_MOCK_CUBE_PORT="$CUBE_PORT" \
+  F2B_MOCK_ENVD_PORT="$ENVD_PORT" \
+  F2B_MOCK_HOST=127.0.0.1 \
+  pnpm exec tsx scripts/mock-cube-envd.ts &
+PIDS+=($!)
+
+for i in $(seq 1 40); do
+  if curl -sf "http://127.0.0.1:${CUBE_PORT}/health" >/dev/null 2>&1; then
+    echo "  mock cube ready"
+    break
+  fi
+  if [[ "$i" -eq 40 ]]; then
+    echo "timeout waiting for mock cube" >&2
+    exit 1
+  fi
+  sleep 0.25
+done
+
+echo "== smoke:cube (adapter + envd protocol) =="
+F2B_CUBE_API_URL="http://127.0.0.1:${CUBE_PORT}" \
+  F2B_CUBE_ENVD_BASE_URL="http://127.0.0.1:${ENVD_PORT}" \
+  F2B_CUBE_API_TOKEN=mock-ci \
+  pnpm smoke:cube
+
 echo "CONTRACT_CI_OK"
