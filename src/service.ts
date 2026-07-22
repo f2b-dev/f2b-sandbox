@@ -5,12 +5,14 @@ import {
   F2bError,
   ReadFileQuerySchema,
   RunCommandSchema,
+  UpdateSandboxSchema,
   WriteFileSchema,
   type CommandStreamEvent,
   type CreateSandboxInput,
   type SandboxRecord,
   type SandboxStatus,
   type TemplateRef,
+  type UpdateSandboxInput,
 } from "@f2b/spec";
 import {
   countActiveSandboxes,
@@ -101,6 +103,45 @@ export async function getSandbox(id: string): Promise<SandboxRecord> {
   return row;
 }
 
+/**
+ * 更新活动沙箱：延期 timeoutMs（从 startedAt 起算）与/或浅合并 metadata。
+ * 终态沙箱拒绝修改。
+ */
+export async function updateSandboxFields(
+  id: string,
+  raw: unknown,
+): Promise<SandboxRecord> {
+  const parsed = UpdateSandboxSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new F2bError(ErrorCode.VALIDATION_ERROR, "invalid update payload", {
+      details: parsed.error.flatten(),
+    });
+  }
+  const input: UpdateSandboxInput = parsed.data;
+  const sb = await getSandbox(id);
+  if (TERMINAL.includes(sb.status)) {
+    throw new F2bError(
+      ErrorCode.SANDBOX_ALREADY_TERMINAL,
+      `sandbox ${sb.id} is ${sb.status}`,
+    );
+  }
+  const patch: {
+    timeoutMs?: number | null;
+    metadata?: Record<string, string>;
+  } = {};
+  if (input.timeoutMs !== undefined) {
+    patch.timeoutMs = input.timeoutMs;
+  }
+  if (input.metadata !== undefined) {
+    patch.metadata = { ...sb.metadata, ...input.metadata };
+  }
+  const updated = updateSandbox(id, patch);
+  if (!updated) {
+    throw new F2bError(ErrorCode.SANDBOX_NOT_FOUND, `sandbox not found: ${id}`);
+  }
+  return updated;
+}
+
 export async function createSandbox(raw: unknown): Promise<SandboxRecord> {
   const parsed = CreateSandboxSchema.safeParse(raw);
   if (!parsed.success) {
@@ -124,6 +165,7 @@ export async function createSandbox(raw: unknown): Promise<SandboxRecord> {
     remoteId: null,
     allowInternetAccess: input.allowInternetAccess,
     timeoutMs: input.timeoutMs ?? null,
+    metadata: input.metadata ?? {},
   });
 
   try {

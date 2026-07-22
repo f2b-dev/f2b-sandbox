@@ -19,11 +19,27 @@ type SandboxRow = {
   cpu: string;
   memory: string;
   error: string | null;
+  metadata_json: string | null;
   created_at: string;
   updated_at: string;
   started_at: string | null;
   finished_at: string | null;
 };
+
+function parseMetadata(raw: string | null | undefined): Record<string, string> {
+  if (!raw) return {};
+  try {
+    const v = JSON.parse(raw) as unknown;
+    if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+    const out: Record<string, string> = {};
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      if (typeof val === "string") out[k] = val;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
 
 function now() {
   return new Date().toISOString();
@@ -51,6 +67,7 @@ export function rowToSandboxRecord(row: SandboxRow): SandboxRecord {
     cpu: row.cpu,
     memory: row.memory,
     error: row.error,
+    metadata: parseMetadata(row.metadata_json),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     startedAt: row.started_at,
@@ -118,18 +135,20 @@ export function insertSandbox(input: {
   remoteId: string | null;
   allowInternetAccess: boolean;
   timeoutMs: number | null;
+  metadata?: Record<string, string>;
   region?: string;
   cpu?: string;
   memory?: string;
 }): SandboxRecord {
   const db = getDb();
   const ts = now();
+  const metadataJson = JSON.stringify(input.metadata ?? {});
   db.run(
     `INSERT INTO sandboxes (
       id, name, template, status, project_id, backend, remote_id,
-      allow_internet, timeout_ms, region, cpu, memory, error,
+      allow_internet, timeout_ms, region, cpu, memory, error, metadata_json,
       created_at, updated_at, started_at, finished_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, NULL)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL)`,
     [
       input.id,
       input.name,
@@ -143,6 +162,7 @@ export function insertSandbox(input: {
       input.region ?? "cn-hangzhou",
       input.cpu ?? "1 vCPU",
       input.memory ?? "2 GB",
+      metadataJson,
       ts,
       ts,
       input.status === "running" ? ts : null,
@@ -159,6 +179,8 @@ export function updateSandbox(
     error?: string | null;
     startedAt?: string | null;
     finishedAt?: string | null;
+    timeoutMs?: number | null;
+    metadata?: Record<string, string>;
   },
 ): SandboxRecord | null {
   const current = getSandboxRow(id);
@@ -172,13 +194,28 @@ export function updateSandbox(
     patch.startedAt !== undefined ? patch.startedAt : current.startedAt;
   const finishedAt =
     patch.finishedAt !== undefined ? patch.finishedAt : current.finishedAt;
+  const timeoutMs =
+    patch.timeoutMs !== undefined ? patch.timeoutMs : current.timeoutMs;
+  const metadata =
+    patch.metadata !== undefined ? patch.metadata : current.metadata;
   const ts = now();
   const db = getDb();
 
   db.run(
     `UPDATE sandboxes SET status = ?, remote_id = ?, error = ?,
-      started_at = ?, finished_at = ?, updated_at = ? WHERE id = ?`,
-    [status, remoteId, error, startedAt, finishedAt, ts, id],
+      started_at = ?, finished_at = ?, timeout_ms = ?, metadata_json = ?,
+      updated_at = ? WHERE id = ?`,
+    [
+      status,
+      remoteId,
+      error,
+      startedAt,
+      finishedAt,
+      timeoutMs,
+      JSON.stringify(metadata ?? {}),
+      ts,
+      id,
+    ],
   );
   return getSandboxRow(id);
 }

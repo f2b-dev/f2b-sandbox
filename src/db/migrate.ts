@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS sandboxes (
   cpu TEXT NOT NULL DEFAULT '1 vCPU',
   memory TEXT NOT NULL DEFAULT '2 GB',
   error TEXT,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   started_at TEXT,
@@ -69,6 +70,14 @@ if (!cols.includes("commands")) {
 if (!cols.includes("kind")) {
   db.exec(
     "ALTER TABLE sandbox_usage ADD COLUMN kind TEXT NOT NULL DEFAULT 'lifetime'",
+  );
+}
+const sbxCols = (
+  db.prepare("PRAGMA table_info(sandboxes)").all() as { name: string }[]
+).map((c) => c.name);
+if (!sbxCols.includes("metadata_json")) {
+  db.exec(
+    "ALTER TABLE sandboxes ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'",
   );
 }
 db.close();

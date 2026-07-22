@@ -27,6 +27,7 @@ import {
   runSandboxCommand,
   startTimeoutReaper,
   streamSandboxCommand,
+  updateSandboxFields,
   writeSandboxFile,
 } from "./service";
 import { json, jsonError, readJson, writeSse } from "./http";
@@ -135,6 +136,11 @@ async function handler(req: Request): Promise<Response> {
       const id = decodeURIComponent(idMatch[1]!);
       if (method === "GET") {
         const sandbox = await getSandbox(id);
+        return json({ sandbox });
+      }
+      if (method === "PATCH") {
+        const body = await readJson(req);
+        const sandbox = await updateSandboxFields(id, body);
         return json({ sandbox });
       }
       if (method === "DELETE") {
