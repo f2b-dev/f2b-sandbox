@@ -27,7 +27,8 @@
     "smoke:files-base64": "tsx scripts/smoke-files-base64.ts",
     "mock:cube": "tsx scripts/mock-cube-envd.ts",
     "ci:contract": "bash scripts/ci-contract.sh",
-    "docker:build": "docker build -f Dockerfile -t ghcr.io/f2b-dev/sandbox:local .."
+    "docker:build": "docker build -f Dockerfile -t ghcr.io/f2b-dev/sandbox:local ..",
+    "smoke:cube-http": "tsx scripts/smoke-cube-http.ts"
   },
   "dependencies": {
     "@f2b/spec": "file:../f2b-spec",

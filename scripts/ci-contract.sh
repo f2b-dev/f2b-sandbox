@@ -158,4 +158,30 @@ F2B_CUBE_API_URL="http://127.0.0.1:${CUBE_PORT}" \
   F2B_CUBE_API_TOKEN=mock-ci \
   pnpm smoke:cube
 
+CUBE_HTTP_PORT="${F2B_CI_CUBE_HTTP_PORT:-19791}"
+CUBE_HTTP_DB="${ROOT}/data/ci-cube-http.db"
+rm -f "$CUBE_HTTP_DB" "${CUBE_HTTP_DB}-wal" "${CUBE_HTTP_DB}-shm" 2>/dev/null || true
+echo "== start sandbox backend=cube HTTP :$CUBE_HTTP_PORT =="
+F2B_AUTH_MODE=off HOST=127.0.0.1 PORT="$CUBE_HTTP_PORT" \
+  DATABASE_URL="file:${CUBE_HTTP_DB}" \
+  F2B_CUBE_API_URL="http://127.0.0.1:${CUBE_PORT}" \
+  F2B_CUBE_ENVD_BASE_URL="http://127.0.0.1:${ENVD_PORT}" \
+  F2B_CUBE_API_TOKEN=mock-ci \
+  pnpm exec tsx src/server.ts &
+PIDS+=($!)
+for i in $(seq 1 60); do
+  if curl -sf "http://127.0.0.1:${CUBE_HTTP_PORT}/healthz" | grep -q '"backend":"cube"'; then
+    echo "  cube HTTP sandbox ready"
+    break
+  fi
+  if [[ "$i" -eq 60 ]]; then
+    echo "timeout waiting for cube HTTP sandbox" >&2
+    exit 1
+  fi
+  sleep 0.25
+done
+
+echo "== smoke:cube-http (product /v1 via cube backend) =="
+F2B_SANDBOX_URL="http://127.0.0.1:${CUBE_HTTP_PORT}" pnpm smoke:cube-http
+
 echo "CONTRACT_CI_OK"
