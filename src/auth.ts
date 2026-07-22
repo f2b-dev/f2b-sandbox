@@ -1,4 +1,4 @@
-import { F2bError } from "@f2b/spec";
+import { ErrorCode, F2bError } from "@f2b/spec";
 import { findApiKeyByPlaintext, type ApiKeyRecord } from "./db/api-keys";
 
 export type AuthMode = "off" | "api_key";
@@ -38,7 +38,7 @@ export function authenticateRequest(req: Request): AuthContext {
 
   const plaintext = extractApiKey(req);
   if (!plaintext) {
-    throw new F2bError("UNAUTHORIZED", "missing API key", {
+    throw new F2bError(ErrorCode.UNAUTHORIZED, "missing API key", {
       details: {
         hint: "Authorization: Bearer <key> or X-API-Key header",
       },
@@ -47,7 +47,7 @@ export function authenticateRequest(req: Request): AuthContext {
 
   const record = findApiKeyByPlaintext(plaintext);
   if (!record) {
-    throw new F2bError("UNAUTHORIZED", "invalid API key");
+    throw new F2bError(ErrorCode.UNAUTHORIZED, "invalid API key");
   }
 
   return { mode, apiKey: record };
@@ -60,7 +60,7 @@ export function assertAdmin(req: Request): void {
     // 未配置管理令牌：仅允许 auth=off 的本地开发创建密钥
     if (resolveAuthMode() === "off") return;
     throw new F2bError(
-      "UNAUTHORIZED",
+      ErrorCode.UNAUTHORIZED,
       "F2B_ADMIN_TOKEN required for key management when auth is on",
     );
   }
@@ -68,6 +68,6 @@ export function assertAdmin(req: Request): void {
     req.headers.get("x-f2b-admin-token")?.trim() ||
     extractApiKey(req);
   if (!provided || provided !== admin) {
-    throw new F2bError("UNAUTHORIZED", "invalid admin token");
+    throw new F2bError(ErrorCode.UNAUTHORIZED, "invalid admin token");
   }
 }
