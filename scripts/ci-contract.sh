@@ -125,6 +125,9 @@ F2B_SANDBOX_URL="http://127.0.0.1:${TO_PORT}" pnpm smoke:keepalive
 echo "== smoke:cmd-opts =="
 F2B_SANDBOX_URL="$BASE" pnpm smoke:cmd-opts
 
+echo "== smoke:files-base64 =="
+F2B_SANDBOX_URL="$BASE" pnpm smoke:files-base64
+
 CUBE_PORT="${F2B_CI_CUBE_PORT:-18991}"
 ENVD_PORT="${F2B_CI_ENVD_PORT:-18992}"
 
