@@ -264,6 +264,32 @@ export class FakeSandboxBackend implements SandboxBackend {
     return [...entries.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  async deleteFile(
+    remoteId: string,
+    path: string,
+    opts?: { recursive?: boolean },
+  ): Promise<void> {
+    const s = this.require(remoteId);
+    const target = normalizePath(path);
+    if (target === "/") {
+      throw new Error("refusing to delete sandbox root");
+    }
+    const exact = s.files.has(target);
+    const prefix = target + "/";
+    const children: string[] = [];
+    for (const p of s.files.keys()) {
+      if (p.startsWith(prefix)) children.push(p);
+    }
+    if (!exact && children.length === 0) {
+      throw new Error(`ENOENT: ${path}`);
+    }
+    if (children.length > 0 && !opts?.recursive) {
+      throw new Error(`EISDIR: directory not empty (use recursive): ${path}`);
+    }
+    if (exact) s.files.delete(target);
+    for (const p of children) s.files.delete(p);
+  }
+
   private require(remoteId: string): FakeState {
     const s = this.sessions.get(remoteId);
     if (!s || s.handle.status === "killed") {

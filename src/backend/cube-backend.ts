@@ -294,6 +294,26 @@ export class CubeSandboxBackend implements SandboxBackend {
       throw new F2bError(ErrorCode.BACKEND_UNAVAILABLE, message, { cause: err });
     }
   }
+
+  async deleteFile(
+    remoteId: string,
+    path: string,
+    opts?: { recursive?: boolean },
+  ): Promise<void> {
+    const session = this.sessionFor(remoteId);
+    try {
+      await this.envd.deleteFile(session, path, opts);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (/ENOENT|not found|404/i.test(message)) {
+        throw new F2bError(ErrorCode.NOT_FOUND, message, {
+          status: 404,
+          cause: err,
+        });
+      }
+      throw new F2bError(ErrorCode.BACKEND_UNAVAILABLE, message, { cause: err });
+    }
+  }
 }
 
 function mapCubeState(s?: string): SandboxStatus | undefined {

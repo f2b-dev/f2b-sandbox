@@ -299,4 +299,37 @@ export class EnvdClient {
       return { path: p, name, isDir, size: e.size };
     });
   }
+
+  /** 删除 guest 文件/目录：先 HTTP DELETE /files，再 Connect Remove */
+  async deleteFile(
+    session: EnvdSession,
+    path: string,
+    opts?: { recursive?: boolean },
+  ): Promise<void> {
+    const q = new URLSearchParams({ path });
+    if (opts?.recursive) q.set("recursive", "true");
+    const httpUrl = `${this.guestOrigin(session)}/files?${q.toString()}`;
+    const del = await this.fetchImpl(httpUrl, {
+      method: "DELETE",
+      headers: this.headers(session),
+    });
+    if (del.ok) return;
+
+    const connectUrl = `${this.guestOrigin(session)}/filesystem.Filesystem/Remove`;
+    const res = await this.fetchImpl(connectUrl, {
+      method: "POST",
+      headers: this.headers(session, {
+        "Content-Type": "application/json",
+        "Connect-Protocol-Version": CONNECT_PROTOCOL_VERSION,
+      }),
+      body: JSON.stringify({ path, recursive: Boolean(opts?.recursive) }),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      const status = res.status || del.status;
+      throw new Error(
+        `envd delete file HTTP ${status}: ${text.slice(0, 300) || del.status}`,
+      );
+    }
+  }
 }

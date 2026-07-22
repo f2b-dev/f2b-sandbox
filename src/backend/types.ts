@@ -57,4 +57,10 @@ export interface SandboxBackend {
   ): Promise<void>;
   readFile(remoteId: string, path: string): Promise<Uint8Array>;
   listFiles(remoteId: string, path?: string): Promise<FileEntry[]>;
+  /** 删除文件；recursive 时删除目录前缀下全部条目 */
+  deleteFile(
+    remoteId: string,
+    path: string,
+    opts?: { recursive?: boolean },
+  ): Promise<void>;
 }

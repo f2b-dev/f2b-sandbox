@@ -14,6 +14,7 @@ import {
 } from "./auth";
 import {
   createSandbox,
+  deleteSandboxFile,
   getSandbox,
   getUsageSummary,
   killSandbox,
@@ -217,6 +218,19 @@ async function handler(req: Request): Promise<Response> {
         const body = await readJson(req);
         const result = await writeSandboxFile(id, body);
         return json(result, 201);
+      }
+      if (method === "DELETE") {
+        const filePath = url.searchParams.get("path");
+        const recursiveRaw = url.searchParams.get("recursive");
+        const recursive =
+          recursiveRaw === "1" ||
+          recursiveRaw === "true" ||
+          recursiveRaw === "yes";
+        const result = await deleteSandboxFile(id, {
+          path: filePath ?? undefined,
+          recursive,
+        });
+        return json(result);
       }
     }
 

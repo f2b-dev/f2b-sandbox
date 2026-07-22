@@ -510,6 +510,38 @@ export async function listSandboxFiles(id: string, path = "/home/user") {
   return getBackend().listFiles(sb.remoteId!, safe);
 }
 
+export async function deleteSandboxFile(
+  id: string,
+  raw: { path?: string; recursive?: boolean },
+) {
+  const sb = await getSandbox(id);
+  assertRunning(sb);
+  const pathRaw = raw.path;
+  if (!pathRaw || typeof pathRaw !== "string") {
+    throw new F2bError(ErrorCode.VALIDATION_ERROR, "path query required");
+  }
+  const path = sanitizePath(pathRaw);
+  if (path === "/") {
+    throw new F2bError(ErrorCode.INVALID_PATH, "refusing to delete root");
+  }
+  try {
+    await getBackend().deleteFile(sb.remoteId!, path, {
+      recursive: Boolean(raw.recursive),
+    });
+  } catch (err) {
+    if (err instanceof F2bError) throw err;
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/ENOENT|not found/i.test(msg)) {
+      throw new F2bError(ErrorCode.NOT_FOUND, msg, { status: 404, cause: err });
+    }
+    if (/EISDIR|not empty|recursive/i.test(msg)) {
+      throw new F2bError(ErrorCode.VALIDATION_ERROR, msg, { cause: err });
+    }
+    throw new F2bError(ErrorCode.BACKEND_UNAVAILABLE, msg, { cause: err });
+  }
+  return { path, ok: true as const };
+}
+
 function sanitizePath(p: string): string {
   if (!p || p.includes("\0")) {
     throw new F2bError(ErrorCode.INVALID_PATH, "invalid path");
