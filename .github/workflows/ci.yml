@@ -17,12 +17,12 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout sandbox
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: f2b-sandbox
 
       - name: Checkout f2b-spec (file dependency)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: f2b-dev/f2b-spec
           path: f2b-spec
@@ -64,12 +64,12 @@ jobs:
       packages: write
     steps:
       - name: Checkout sandbox
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: f2b-sandbox
 
       - name: Checkout f2b-spec
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: f2b-dev/f2b-spec
           path: f2b-spec
