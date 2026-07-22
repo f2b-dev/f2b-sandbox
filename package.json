@@ -16,6 +16,7 @@
     "smoke:capacity": "tsx scripts/smoke-capacity.ts",
     "smoke:usage": "tsx scripts/smoke-usage.ts",
     "smoke:timeout": "tsx scripts/smoke-timeout.ts",
+    "smoke:keepalive": "tsx scripts/smoke-keepalive.ts",
     "smoke:templates": "tsx scripts/smoke-templates.ts",
     "smoke:pause": "tsx scripts/smoke-pause.ts",
     "smoke:meta": "tsx scripts/smoke-meta.ts",

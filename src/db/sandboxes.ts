@@ -23,6 +23,7 @@ type SandboxRow = {
   created_at: string;
   updated_at: string;
   started_at: string | null;
+  last_active_at: string | null;
   finished_at: string | null;
 };
 
@@ -71,6 +72,7 @@ export function rowToSandboxRecord(row: SandboxRow): SandboxRecord {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     startedAt: row.started_at,
+    lastActiveAt: row.last_active_at ?? row.started_at ?? row.created_at,
     finishedAt: row.finished_at,
     durationSec: durationSec(row.created_at, row.finished_at),
   };
@@ -157,12 +159,13 @@ export function insertSandbox(input: {
   const db = getDb();
   const ts = now();
   const metadataJson = JSON.stringify(input.metadata ?? {});
+  const startedAt = input.status === "running" ? ts : null;
   db.run(
     `INSERT INTO sandboxes (
       id, name, template, status, project_id, backend, remote_id,
       allow_internet, timeout_ms, region, cpu, memory, error, metadata_json,
-      created_at, updated_at, started_at, finished_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL)`,
+      created_at, updated_at, started_at, last_active_at, finished_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL)`,
     [
       input.id,
       input.name,
@@ -179,7 +182,8 @@ export function insertSandbox(input: {
       metadataJson,
       ts,
       ts,
-      input.status === "running" ? ts : null,
+      startedAt,
+      startedAt ?? ts,
     ],
   );
   return getSandboxRow(input.id)!;
@@ -192,6 +196,7 @@ export function updateSandbox(
     remoteId?: string | null;
     error?: string | null;
     startedAt?: string | null;
+    lastActiveAt?: string | null;
     finishedAt?: string | null;
     timeoutMs?: number | null;
     metadata?: Record<string, string>;
@@ -206,6 +211,10 @@ export function updateSandbox(
   const error = patch.error !== undefined ? patch.error : current.error;
   const startedAt =
     patch.startedAt !== undefined ? patch.startedAt : current.startedAt;
+  const lastActiveAt =
+    patch.lastActiveAt !== undefined
+      ? patch.lastActiveAt
+      : (current.lastActiveAt ?? current.startedAt ?? current.createdAt);
   const finishedAt =
     patch.finishedAt !== undefined ? patch.finishedAt : current.finishedAt;
   const timeoutMs =
@@ -217,13 +226,14 @@ export function updateSandbox(
 
   db.run(
     `UPDATE sandboxes SET status = ?, remote_id = ?, error = ?,
-      started_at = ?, finished_at = ?, timeout_ms = ?, metadata_json = ?,
-      updated_at = ? WHERE id = ?`,
+      started_at = ?, last_active_at = ?, finished_at = ?, timeout_ms = ?,
+      metadata_json = ?, updated_at = ? WHERE id = ?`,
     [
       status,
       remoteId,
       error,
       startedAt,
+      lastActiveAt,
       finishedAt,
       timeoutMs,
       JSON.stringify(metadata ?? {}),
@@ -232,6 +242,16 @@ export function updateSandbox(
     ],
   );
   return getSandboxRow(id);
+}
+
+/** 刷新活动时间（滑动空闲超时） */
+export function touchSandboxActivity(id: string): void {
+  const db = getDb();
+  const ts = now();
+  db.run(
+    `UPDATE sandboxes SET last_active_at = ?, updated_at = ? WHERE id = ?`,
+    [ts, ts, id],
+  );
 }
 
 export type UsageKind = "lifetime" | "command";

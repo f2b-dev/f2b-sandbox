@@ -119,6 +119,9 @@ wait_health "http://127.0.0.1:${TO_PORT}" "off"
 echo "== smoke:timeout =="
 F2B_SANDBOX_URL="http://127.0.0.1:${TO_PORT}" pnpm smoke:timeout
 
+echo "== smoke:keepalive =="
+F2B_SANDBOX_URL="http://127.0.0.1:${TO_PORT}" pnpm smoke:keepalive
+
 CUBE_PORT="${F2B_CI_CUBE_PORT:-18991}"
 ENVD_PORT="${F2B_CI_ENVD_PORT:-18992}"
 

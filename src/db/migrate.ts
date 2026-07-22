@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS sandboxes (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   started_at TEXT,
+  last_active_at TEXT,
   finished_at TEXT
 );
 
@@ -78,6 +79,13 @@ const sbxCols = (
 if (!sbxCols.includes("metadata_json")) {
   db.exec(
     "ALTER TABLE sandboxes ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'",
+  );
+}
+if (!sbxCols.includes("last_active_at")) {
+  db.exec("ALTER TABLE sandboxes ADD COLUMN last_active_at TEXT");
+  db.exec(
+    `UPDATE sandboxes SET last_active_at = COALESCE(started_at, created_at)
+     WHERE last_active_at IS NULL`,
   );
 }
 db.close();

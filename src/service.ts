@@ -24,6 +24,7 @@ import {
   listSandboxRows,
   recordSandboxUsage,
   summarizeUsage,
+  touchSandboxActivity,
   updateSandbox,
   type UsageSummary,
 } from "./db/sandboxes";
@@ -144,7 +145,8 @@ export async function getSandbox(id: string): Promise<SandboxRecord> {
 }
 
 /**
- * 更新活动沙箱：延期 timeoutMs（从 startedAt 起算）与/或浅合并 metadata。
+ * 更新活动沙箱：设置空闲 timeoutMs 窗口与/或浅合并 metadata。
+ * 设置非 null timeoutMs 时刷新 lastActiveAt（从现在起重新计时）。
  * 终态沙箱拒绝修改。
  */
 export async function updateSandboxFields(
@@ -167,10 +169,14 @@ export async function updateSandboxFields(
   }
   const patch: {
     timeoutMs?: number | null;
+    lastActiveAt?: string | null;
     metadata?: Record<string, string>;
   } = {};
   if (input.timeoutMs !== undefined) {
     patch.timeoutMs = input.timeoutMs;
+    if (input.timeoutMs != null) {
+      patch.lastActiveAt = new Date().toISOString();
+    }
   }
   if (input.metadata !== undefined) {
     patch.metadata = { ...sb.metadata, ...input.metadata };
@@ -180,6 +186,15 @@ export async function updateSandboxFields(
     throw new F2bError(ErrorCode.SANDBOX_NOT_FOUND, `sandbox not found: ${id}`);
   }
   return updated;
+}
+
+/** 命令/文件等活动：刷新 lastActiveAt，实现滑动空闲超时 */
+function noteActivity(id: string) {
+  try {
+    touchSandboxActivity(id);
+  } catch {
+    // 保活失败不阻断主操作
+  }
 }
 
 export async function createSandbox(raw: unknown): Promise<SandboxRecord> {
@@ -214,10 +229,12 @@ export async function createSandbox(raw: unknown): Promise<SandboxRecord> {
       sandboxId: id,
       name,
     });
+    const ts = new Date().toISOString();
     const updated = updateSandbox(id, {
       status: handle.status === "provisioning" ? "running" : handle.status,
       remoteId: handle.remoteId,
-      startedAt: new Date().toISOString(),
+      startedAt: ts,
+      lastActiveAt: ts,
       error: null,
     });
     return updated!;
@@ -338,7 +355,7 @@ export async function killSandbox(
   })!;
 }
 
-/** 扫表回收 timeoutMs 已到期的活动沙箱；返回被 kill 的 id 列表 */
+/** 扫表回收空闲超时沙箱：到期点 = lastActiveAt（回落 startedAt/createdAt）+ timeoutMs */
 export async function reapExpiredSandboxes(
   nowMs = Date.now(),
 ): Promise<string[]> {
@@ -346,9 +363,11 @@ export async function reapExpiredSandboxes(
   const killed: string[] = [];
   for (const sb of candidates) {
     if (sb.timeoutMs == null || sb.timeoutMs <= 0) continue;
-    const start = Date.parse(sb.startedAt ?? sb.createdAt);
-    if (Number.isNaN(start)) continue;
-    if (nowMs < start + sb.timeoutMs) continue;
+    const anchor = Date.parse(
+      sb.lastActiveAt ?? sb.startedAt ?? sb.createdAt,
+    );
+    if (Number.isNaN(anchor)) continue;
+    if (nowMs < anchor + sb.timeoutMs) continue;
     try {
       await killSandbox(sb.id, { reason: "timeout exceeded" });
       killed.push(sb.id);
@@ -416,6 +435,7 @@ export async function runSandboxCommand(id: string, raw: unknown) {
       commands: 1,
       kind: "command",
     });
+    noteActivity(id);
     return result;
   } catch (err) {
     if (err instanceof F2bError) throw err;
@@ -446,6 +466,7 @@ export async function* streamSandboxCommand(
     if (counted) return;
     counted = true;
     recordSandboxUsage(id, durationMs, { commands: 1, kind: "command" });
+    noteActivity(id);
   };
   try {
     if (backend.streamCommand) {
@@ -507,6 +528,7 @@ export async function writeSandboxFile(id: string, raw: unknown) {
       ? Buffer.from(parsed.data.content, "base64")
       : parsed.data.content;
   await getBackend().writeFile(sb.remoteId!, path, content);
+  noteActivity(id);
   return { path, ok: true as const };
 }
 
@@ -522,6 +544,7 @@ export async function readSandboxFile(id: string, raw: unknown) {
   const path = sanitizePath(parsed.data.path);
   try {
     const data = await getBackend().readFile(sb.remoteId!, path);
+    noteActivity(id);
     if (parsed.data.encoding === "base64") {
       return {
         path,
@@ -547,7 +570,9 @@ export async function listSandboxFiles(id: string, path = "/home/user") {
   const sb = await getSandbox(id);
   assertRunning(sb);
   const safe = sanitizePath(path);
-  return getBackend().listFiles(sb.remoteId!, safe);
+  const entries = await getBackend().listFiles(sb.remoteId!, safe);
+  noteActivity(id);
+  return entries;
 }
 
 export async function deleteSandboxFile(
@@ -579,6 +604,7 @@ export async function deleteSandboxFile(
     }
     throw new F2bError(ErrorCode.BACKEND_UNAVAILABLE, msg, { cause: err });
   }
+  noteActivity(id);
   return { path, ok: true as const };
 }
 
@@ -610,6 +636,7 @@ export async function mkdirSandboxFile(id: string, raw: unknown) {
     }
     throw new F2bError(ErrorCode.BACKEND_UNAVAILABLE, msg, { cause: err });
   }
+  noteActivity(id);
   return { path, ok: true as const };
 }
 
@@ -640,6 +667,7 @@ export async function renameSandboxFile(id: string, raw: unknown) {
     }
     throw new F2bError(ErrorCode.BACKEND_UNAVAILABLE, msg, { cause: err });
   }
+  noteActivity(id);
   return { from, to, ok: true as const };
 }
 
