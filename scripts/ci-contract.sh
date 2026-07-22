@@ -63,6 +63,8 @@ echo "== smoke:meta =="
 F2B_SANDBOX_URL="$BASE" pnpm smoke:meta
 echo "== smoke:files-delete =="
 F2B_SANDBOX_URL="$BASE" pnpm smoke:files-delete
+echo "== smoke:list-filter =="
+F2B_SANDBOX_URL="$BASE" pnpm smoke:list-filter
 
 echo "== smoke:stream =="
 F2B_SANDBOX_URL="$BASE" pnpm smoke:stream

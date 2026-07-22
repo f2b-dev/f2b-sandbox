@@ -3,7 +3,7 @@ import type {
   SandboxRecord,
   SandboxStatus,
 } from "@f2b/spec";
-import { getDb } from "./client";
+import { getDb, type SqlValue } from "./client";
 
 type SandboxRow = {
   id: string;
@@ -76,16 +76,30 @@ export function rowToSandboxRecord(row: SandboxRow): SandboxRecord {
   };
 }
 
-export function listSandboxRows(projectId?: string): SandboxRecord[] {
+export type ListSandboxFilter = {
+  projectId?: string;
+  /** 单状态或逗号分隔多状态 */
+  statuses?: string[];
+};
+
+export function listSandboxRows(filter: ListSandboxFilter = {}): SandboxRecord[] {
   const db = getDb();
-  const rows = projectId
-    ? db.all<SandboxRow>(
-        `SELECT * FROM sandboxes WHERE project_id = ? ORDER BY created_at DESC LIMIT 200`,
-        [projectId],
-      )
-    : db.all<SandboxRow>(
-        `SELECT * FROM sandboxes ORDER BY created_at DESC LIMIT 200`,
-      );
+  const clauses: string[] = [];
+  const params: SqlValue[] = [];
+  if (filter.projectId) {
+    clauses.push("project_id = ?");
+    params.push(filter.projectId);
+  }
+  if (filter.statuses && filter.statuses.length > 0) {
+    const ph = filter.statuses.map(() => "?").join(", ");
+    clauses.push(`status IN (${ph})`);
+    params.push(...filter.statuses);
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const rows = db.all<SandboxRow>(
+    `SELECT * FROM sandboxes ${where} ORDER BY created_at DESC LIMIT 200`,
+    params,
+  );
   return rows.map(rowToSandboxRecord);
 }
 

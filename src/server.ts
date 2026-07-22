@@ -122,7 +122,8 @@ async function handler(req: Request): Promise<Response> {
     if (pathname === "/v1/sandboxes") {
       if (method === "GET") {
         const projectId = url.searchParams.get("projectId") ?? undefined;
-        const sandboxes = await listSandboxes(projectId);
+        const status = url.searchParams.get("status") ?? undefined;
+        const sandboxes = await listSandboxes({ projectId, status });
         return json({ sandboxes });
       }
       if (method === "POST") {

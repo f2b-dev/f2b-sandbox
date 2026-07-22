@@ -91,8 +91,46 @@ function assertRunning(sb: SandboxRecord) {
   }
 }
 
-export async function listSandboxes(projectId?: string): Promise<SandboxRecord[]> {
-  return listSandboxRows(projectId);
+const LIST_STATUSES = new Set([
+  "provisioning",
+  "running",
+  "paused",
+  "succeeded",
+  "failed",
+  "killed",
+]);
+
+export type ListSandboxesQuery = {
+  projectId?: string;
+  /** 逗号分隔或数组 */
+  status?: string | string[];
+};
+
+export async function listSandboxes(
+  query: ListSandboxesQuery | string = {},
+): Promise<SandboxRecord[]> {
+  // 兼容旧调用 listSandboxes(projectId)
+  const q: ListSandboxesQuery =
+    typeof query === "string" ? { projectId: query } : query;
+  let statuses: string[] | undefined;
+  if (q.status !== undefined) {
+    const raw = Array.isArray(q.status)
+      ? q.status
+      : q.status.split(",").map((s) => s.trim()).filter(Boolean);
+    statuses = raw;
+    for (const s of statuses) {
+      if (!LIST_STATUSES.has(s)) {
+        throw new F2bError(
+          ErrorCode.VALIDATION_ERROR,
+          `invalid status filter: ${s}`,
+        );
+      }
+    }
+  }
+  return listSandboxRows({
+    projectId: q.projectId,
+    statuses,
+  });
 }
 
 export async function getSandbox(id: string): Promise<SandboxRecord> {
