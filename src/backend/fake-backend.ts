@@ -31,6 +31,22 @@ function normalizePath(p: string): string {
   return "/" + stack.join("/");
 }
 
+/** 相对 cwd 解析路径；已是绝对路径则只 normalize */
+function resolvePath(cwd: string, p: string): string {
+  const t = p.trim();
+  if (!t) return normalizePath(cwd);
+  if (t.startsWith("/")) return normalizePath(t);
+  const base = cwd.replace(/\/+$/, "") || "";
+  return normalizePath(`${base}/${t}`);
+}
+
+/** 极简 $VAR / ${VAR} 展开（仅 input.env） */
+function expandEnv(text: string, env: Record<string, string>): string {
+  return text
+    .replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, k: string) => env[k] ?? "")
+    .replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_, k: string) => env[k] ?? "");
+}
+
 const GLOBAL_KEY = "__lingjing_fake_sandbox_sessions__";
 
 function globalSessions(): Map<string, FakeState> {
@@ -171,24 +187,62 @@ export class FakeSandboxBackend implements SandboxBackend {
   ): CommandResult {
     const started = Date.now();
     const cmd = input.cmd.trim();
+    const cwd = normalizePath(input.cwd?.trim() || "/home/user");
+    const env = input.env ?? {};
 
-    // 极简 shell 模拟：echo / cat / ls / pwd / 写文件 echo > path
+    // 命令级 timeout：sleep N（秒）超过 timeoutMs 则 124
+    if (input.timeoutMs != null && input.timeoutMs > 0) {
+      const sleepM = /^sleep\s+(\d+(?:\.\d+)?)\s*$/.exec(cmd);
+      if (sleepM) {
+        const wantMs = Math.round(parseFloat(sleepM[1]!) * 1000);
+        if (wantMs > input.timeoutMs) {
+          return {
+            exitCode: 124,
+            stdout: "",
+            stderr: `timeout after ${input.timeoutMs}ms\n`,
+            durationMs: input.timeoutMs,
+          };
+        }
+        return ok(started, "", "");
+      }
+    }
+
+    // 极简 shell 模拟：echo / cat / ls / pwd / printenv / 写文件
     if (cmd === "pwd") {
-      return ok(started, input.cwd ?? "/home/user", "");
+      return ok(started, `${cwd}\n`, "");
+    }
+    if (cmd === "printenv" || cmd.startsWith("printenv ")) {
+      const key = cmd === "printenv" ? "" : cmd.slice("printenv".length).trim();
+      if (!key) {
+        const lines = Object.keys(env)
+          .sort()
+          .map((k) => `${k}=${env[k]}`)
+          .join("\n");
+        return ok(started, lines ? `${lines}\n` : "", "");
+      }
+      if (Object.prototype.hasOwnProperty.call(env, key)) {
+        return ok(started, `${env[key]}\n`, "");
+      }
+      return {
+        exitCode: 1,
+        stdout: "",
+        stderr: "",
+        durationMs: Date.now() - started,
+      };
     }
     if (cmd.startsWith("echo ")) {
       const rest = cmd.slice(5);
       const redir = rest.match(/^(.*)>(\s*)(.+)$/);
       if (redir) {
-        const content = stripQuotes(redir[1]!.trim()) + "\n";
-        const path = normalizePath(redir[3]!.trim());
+        const content = expandEnv(stripQuotes(redir[1]!.trim()), env) + "\n";
+        const path = resolvePath(cwd, redir[3]!.trim());
         s.files.set(path, new TextEncoder().encode(content));
         return ok(started, "", "");
       }
-      return ok(started, stripQuotes(rest) + "\n", "");
+      return ok(started, expandEnv(stripQuotes(rest), env) + "\n", "");
     }
     if (cmd.startsWith("cat ")) {
-      const path = normalizePath(cmd.slice(4).trim());
+      const path = resolvePath(cwd, cmd.slice(4).trim());
       const data = s.files.get(path);
       if (!data) {
         return {
@@ -201,8 +255,9 @@ export class FakeSandboxBackend implements SandboxBackend {
       return ok(started, new TextDecoder().decode(data), "");
     }
     if (cmd === "ls" || cmd.startsWith("ls ")) {
-      const arg = cmd === "ls" ? "/home/user" : cmd.slice(3).trim() || "/home/user";
-      const dir = normalizePath(arg);
+      const arg =
+        cmd === "ls" ? cwd : cmd.slice(3).trim() || cwd;
+      const dir = resolvePath(cwd, arg);
       const names = new Set<string>();
       for (const p of s.files.keys()) {
         if (p.startsWith(dir === "/" ? "/" : dir + "/")) {
