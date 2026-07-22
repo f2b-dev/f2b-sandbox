@@ -21,8 +21,10 @@ import {
   listSandboxFiles,
   listSandboxes,
   listTemplates,
+  mkdirSandboxFile,
   pauseSandbox,
   readSandboxFile,
+  renameSandboxFile,
   resolveMaxConcurrentSandboxes,
   resumeSandbox,
   runSandboxCommand,
@@ -188,6 +190,26 @@ async function handler(req: Request): Promise<Response> {
       const body = await readJson(req);
       const result = await runSandboxCommand(id, body);
       return json({ result });
+    }
+
+    const mkdirMatch = pathname.match(
+      /^\/v1\/sandboxes\/([^/]+)\/files\/mkdir$/,
+    );
+    if (mkdirMatch && method === "POST") {
+      const id = decodeURIComponent(mkdirMatch[1]!);
+      const body = await readJson(req);
+      const result = await mkdirSandboxFile(id, body);
+      return json(result, 201);
+    }
+
+    const renameMatch = pathname.match(
+      /^\/v1\/sandboxes\/([^/]+)\/files\/rename$/,
+    );
+    if (renameMatch && method === "POST") {
+      const id = decodeURIComponent(renameMatch[1]!);
+      const body = await readJson(req);
+      const result = await renameSandboxFile(id, body);
+      return json(result);
     }
 
     const filesMatch = pathname.match(/^\/v1\/sandboxes\/([^/]+)\/files$/);

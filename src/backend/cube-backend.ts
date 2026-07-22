@@ -314,6 +314,42 @@ export class CubeSandboxBackend implements SandboxBackend {
       throw new F2bError(ErrorCode.BACKEND_UNAVAILABLE, message, { cause: err });
     }
   }
+
+  async mkdir(
+    remoteId: string,
+    path: string,
+    opts?: { recursive?: boolean },
+  ): Promise<void> {
+    const session = this.sessionFor(remoteId);
+    try {
+      await this.envd.mkdir(session, path, opts);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (/EEXIST|exists/i.test(message)) {
+        throw new F2bError(ErrorCode.VALIDATION_ERROR, message, { cause: err });
+      }
+      throw new F2bError(ErrorCode.BACKEND_UNAVAILABLE, message, { cause: err });
+    }
+  }
+
+  async rename(remoteId: string, from: string, to: string): Promise<void> {
+    const session = this.sessionFor(remoteId);
+    try {
+      await this.envd.rename(session, from, to);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (/ENOENT|not found|404/i.test(message)) {
+        throw new F2bError(ErrorCode.NOT_FOUND, message, {
+          status: 404,
+          cause: err,
+        });
+      }
+      if (/EEXIST|exists/i.test(message)) {
+        throw new F2bError(ErrorCode.VALIDATION_ERROR, message, { cause: err });
+      }
+      throw new F2bError(ErrorCode.BACKEND_UNAVAILABLE, message, { cause: err });
+    }
+  }
 }
 
 function mapCubeState(s?: string): SandboxStatus | undefined {

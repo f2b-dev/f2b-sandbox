@@ -3,7 +3,9 @@ import {
   CreateSandboxSchema,
   ErrorCode,
   F2bError,
+  MkdirSchema,
   ReadFileQuerySchema,
+  RenameFileSchema,
   RunCommandSchema,
   UpdateSandboxSchema,
   WriteFileSchema,
@@ -578,6 +580,67 @@ export async function deleteSandboxFile(
     throw new F2bError(ErrorCode.BACKEND_UNAVAILABLE, msg, { cause: err });
   }
   return { path, ok: true as const };
+}
+
+export async function mkdirSandboxFile(id: string, raw: unknown) {
+  const sb = await getSandbox(id);
+  assertRunning(sb);
+  const parsed = MkdirSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new F2bError(ErrorCode.VALIDATION_ERROR, "invalid mkdir payload", {
+      details: parsed.error.flatten(),
+    });
+  }
+  const path = sanitizePath(parsed.data.path);
+  if (path === "/") {
+    throw new F2bError(ErrorCode.INVALID_PATH, "refusing to mkdir root");
+  }
+  try {
+    await getBackend().mkdir(sb.remoteId!, path, {
+      recursive: parsed.data.recursive !== false,
+    });
+  } catch (err) {
+    if (err instanceof F2bError) throw err;
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/ENOENT|not found/i.test(msg)) {
+      throw new F2bError(ErrorCode.NOT_FOUND, msg, { status: 404, cause: err });
+    }
+    if (/EEXIST|exists/i.test(msg)) {
+      throw new F2bError(ErrorCode.VALIDATION_ERROR, msg, { cause: err });
+    }
+    throw new F2bError(ErrorCode.BACKEND_UNAVAILABLE, msg, { cause: err });
+  }
+  return { path, ok: true as const };
+}
+
+export async function renameSandboxFile(id: string, raw: unknown) {
+  const sb = await getSandbox(id);
+  assertRunning(sb);
+  const parsed = RenameFileSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new F2bError(ErrorCode.VALIDATION_ERROR, "invalid rename payload", {
+      details: parsed.error.flatten(),
+    });
+  }
+  const from = sanitizePath(parsed.data.from);
+  const to = sanitizePath(parsed.data.to);
+  if (from === "/" || to === "/") {
+    throw new F2bError(ErrorCode.INVALID_PATH, "refusing to rename root");
+  }
+  try {
+    await getBackend().rename(sb.remoteId!, from, to);
+  } catch (err) {
+    if (err instanceof F2bError) throw err;
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/ENOENT|not found/i.test(msg)) {
+      throw new F2bError(ErrorCode.NOT_FOUND, msg, { status: 404, cause: err });
+    }
+    if (/EEXIST|exists/i.test(msg)) {
+      throw new F2bError(ErrorCode.VALIDATION_ERROR, msg, { cause: err });
+    }
+    throw new F2bError(ErrorCode.BACKEND_UNAVAILABLE, msg, { cause: err });
+  }
+  return { from, to, ok: true as const };
 }
 
 function sanitizePath(p: string): string {

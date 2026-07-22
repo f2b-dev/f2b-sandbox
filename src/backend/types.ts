@@ -63,4 +63,12 @@ export interface SandboxBackend {
     path: string,
     opts?: { recursive?: boolean },
   ): Promise<void>;
+  /** 创建目录；recursive 默认创建中间路径 */
+  mkdir(
+    remoteId: string,
+    path: string,
+    opts?: { recursive?: boolean },
+  ): Promise<void>;
+  /** 重命名或移动文件/目录 */
+  rename(remoteId: string, from: string, to: string): Promise<void>;
 }

@@ -332,4 +332,84 @@ export class EnvdClient {
       );
     }
   }
+
+  /** 创建目录：Connect MakeDir，失败再尝试 shell mkdir */
+  async mkdir(
+    session: EnvdSession,
+    path: string,
+    opts?: { recursive?: boolean },
+  ): Promise<void> {
+    const recursive = opts?.recursive !== false;
+    const connectUrl = `${this.guestOrigin(session)}/filesystem.Filesystem/MakeDir`;
+    const res = await this.fetchImpl(connectUrl, {
+      method: "POST",
+      headers: this.headers(session, {
+        "Content-Type": "application/json",
+        "Connect-Protocol-Version": CONNECT_PROTOCOL_VERSION,
+      }),
+      body: JSON.stringify({ path }),
+    });
+    if (res.ok) return;
+
+    // 回退：部分 envd 版本无 MakeDir
+    const shell = recursive
+      ? `mkdir -p ${JSON.stringify(path)}`
+      : `mkdir ${JSON.stringify(path)}`;
+    const startUrl = `${this.guestOrigin(session)}/process.Process/Start`;
+    const start = await this.fetchImpl(startUrl, {
+      method: "POST",
+      headers: this.headers(session, {
+        "Content-Type": "application/json",
+        "Connect-Protocol-Version": CONNECT_PROTOCOL_VERSION,
+      }),
+      body: JSON.stringify({
+        process: { cmd: "/bin/sh", args: ["-c", shell] },
+      }),
+    });
+    if (!start.ok) {
+      const text = await start.text().catch(() => "");
+      const prev = await res.text().catch(() => "");
+      throw new Error(
+        `envd mkdir HTTP ${start.status}: ${text.slice(0, 200) || prev.slice(0, 200)}`,
+      );
+    }
+  }
+
+  /** 重命名/移动：Connect Move，失败再 shell mv */
+  async rename(
+    session: EnvdSession,
+    from: string,
+    to: string,
+  ): Promise<void> {
+    const connectUrl = `${this.guestOrigin(session)}/filesystem.Filesystem/Move`;
+    const res = await this.fetchImpl(connectUrl, {
+      method: "POST",
+      headers: this.headers(session, {
+        "Content-Type": "application/json",
+        "Connect-Protocol-Version": CONNECT_PROTOCOL_VERSION,
+      }),
+      body: JSON.stringify({ source: from, destination: to }),
+    });
+    if (res.ok) return;
+
+    const shell = `mv ${JSON.stringify(from)} ${JSON.stringify(to)}`;
+    const startUrl = `${this.guestOrigin(session)}/process.Process/Start`;
+    const start = await this.fetchImpl(startUrl, {
+      method: "POST",
+      headers: this.headers(session, {
+        "Content-Type": "application/json",
+        "Connect-Protocol-Version": CONNECT_PROTOCOL_VERSION,
+      }),
+      body: JSON.stringify({
+        process: { cmd: "/bin/sh", args: ["-c", shell] },
+      }),
+    });
+    if (!start.ok) {
+      const text = await start.text().catch(() => "");
+      const prev = await res.text().catch(() => "");
+      throw new Error(
+        `envd rename HTTP ${start.status}: ${text.slice(0, 200) || prev.slice(0, 200)}`,
+      );
+    }
+  }
 }

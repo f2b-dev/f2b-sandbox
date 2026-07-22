@@ -290,6 +290,80 @@ export class FakeSandboxBackend implements SandboxBackend {
     for (const p of children) s.files.delete(p);
   }
 
+  async mkdir(
+    remoteId: string,
+    path: string,
+    opts?: { recursive?: boolean },
+  ): Promise<void> {
+    const s = this.require(remoteId);
+    const target = normalizePath(path);
+    if (target === "/") return;
+    // 用占位键表示空目录：path/.keep（list 时会显示为 dir）
+    const marker = `${target}/.keep`;
+    if (s.files.has(target)) {
+      throw new Error(`EEXIST: file exists: ${path}`);
+    }
+    // 已是目录（有子路径）则幂等
+    const prefix = target + "/";
+    for (const p of s.files.keys()) {
+      if (p.startsWith(prefix) || p === marker) return;
+    }
+    if (opts?.recursive === false) {
+      const parent = target.slice(0, target.lastIndexOf("/")) || "/";
+      if (parent !== "/") {
+        const parentPrefix = parent + "/";
+        let parentOk = false;
+        for (const p of s.files.keys()) {
+          if (p.startsWith(parentPrefix) || p === parent) {
+            parentOk = true;
+            break;
+          }
+        }
+        if (!parentOk) {
+          throw new Error(`ENOENT: parent missing: ${parent}`);
+        }
+      }
+    }
+    s.files.set(marker, new Uint8Array());
+  }
+
+  async rename(remoteId: string, from: string, to: string): Promise<void> {
+    const s = this.require(remoteId);
+    const src = normalizePath(from);
+    const dst = normalizePath(to);
+    if (src === "/" || dst === "/") {
+      throw new Error("refusing to rename sandbox root");
+    }
+    if (src === dst) return;
+
+    const moves: Array<{ from: string; to: string }> = [];
+    if (s.files.has(src)) {
+      moves.push({ from: src, to: dst });
+    }
+    const prefix = src + "/";
+    for (const p of s.files.keys()) {
+      if (p.startsWith(prefix)) {
+        moves.push({ from: p, to: dst + p.slice(src.length) });
+      }
+    }
+    if (moves.length === 0) {
+      throw new Error(`ENOENT: ${from}`);
+    }
+    // 目标冲突：目标路径已有文件且不是本次将搬走的源
+    const srcSet = new Set(moves.map((m) => m.from));
+    for (const m of moves) {
+      if (s.files.has(m.to) && !srcSet.has(m.to)) {
+        throw new Error(`EEXIST: ${m.to}`);
+      }
+    }
+    const bufs = moves.map((m) => ({
+      to: m.to,
+      data: s.files.get(m.from)!,
+    }));
+    for (const m of moves) s.files.delete(m.from);
+    for (const b of bufs) s.files.set(b.to, b.data);
+  }
+
   private require(remoteId: string): FakeState {
     const s = this.sessions.get(remoteId);
     if (!s || s.handle.status === "killed") {
