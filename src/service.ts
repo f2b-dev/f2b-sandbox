@@ -50,6 +50,34 @@ export function resolveMaxConcurrentSandboxes(): number | null {
   return Math.floor(n);
 }
 
+/** 并发占用快照（healthz / 运维面板；不含密钥） */
+export function getCapacitySnapshot(): {
+  active: number;
+  max: number | null;
+  available: number | null;
+} {
+  const active = countActiveSandboxes();
+  const max = resolveMaxConcurrentSandboxes();
+  return {
+    active,
+    max,
+    available: max === null ? null : Math.max(0, max - active),
+  };
+}
+
+/** reaper 运行态（由 startTimeoutReaper 写入） */
+let reaperRuntime: {
+  enabled: boolean;
+  intervalMs: number;
+} = { enabled: false, intervalMs: 0 };
+
+export function getTimeoutReaperStatus(): {
+  enabled: boolean;
+  intervalMs: number;
+} {
+  return { ...reaperRuntime };
+}
+
 function assertCapacityAvailable() {
   const max = resolveMaxConcurrentSandboxes();
   if (max === null) return;
@@ -389,9 +417,11 @@ export function startTimeoutReaper(): { stop: () => void } | null {
   const raw = process.env.F2B_TIMEOUT_REAPER_MS?.trim();
   const intervalMs = raw === undefined || raw === "" ? 2000 : Number(raw);
   if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+    reaperRuntime = { enabled: false, intervalMs: 0 };
     console.log("[reaper] disabled (F2B_TIMEOUT_REAPER_MS<=0)");
     return null;
   }
+  reaperRuntime = { enabled: true, intervalMs };
   let running = false;
   const tick = async () => {
     if (running) return;
@@ -416,7 +446,10 @@ export function startTimeoutReaper(): { stop: () => void } | null {
   if (typeof handle.unref === "function") handle.unref();
   console.log(`[reaper] started intervalMs=${intervalMs}`);
   return {
-    stop: () => clearInterval(handle),
+    stop: () => {
+      clearInterval(handle);
+      reaperRuntime = { enabled: false, intervalMs: 0 };
+    },
   };
 }
 

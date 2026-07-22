@@ -15,7 +15,9 @@ import {
 import {
   createSandbox,
   deleteSandboxFile,
+  getCapacitySnapshot,
   getSandbox,
+  getTimeoutReaperStatus,
   getUsageSummary,
   killSandbox,
   listSandboxFiles,
@@ -25,7 +27,6 @@ import {
   pauseSandbox,
   readSandboxFile,
   renameSandboxFile,
-  resolveMaxConcurrentSandboxes,
   resumeSandbox,
   runSandboxCommand,
   startTimeoutReaper,
@@ -50,14 +51,21 @@ async function handler(req: Request): Promise<Response> {
   try {
     if (method === "GET" && (pathname === "/healthz" || pathname === "/")) {
       const backend = createSandboxBackend();
-      const maxConcurrent = resolveMaxConcurrentSandboxes();
+      const capacity = getCapacitySnapshot();
+      const reaper = getTimeoutReaperStatus();
       return json({
         ok: true,
         service: "f2b-sandbox",
         backend: backend.kind,
         auth: resolveAuthMode(),
         db: resolveDatabasePath(),
-        ...(maxConcurrent !== null ? { maxConcurrentSandboxes: maxConcurrent } : {}),
+        // 兼容旧字段；完整占用见 capacity
+        ...(capacity.max !== null
+          ? { maxConcurrentSandboxes: capacity.max }
+          : {}),
+        activeSandboxes: capacity.active,
+        capacity,
+        reaper,
       });
     }
 
