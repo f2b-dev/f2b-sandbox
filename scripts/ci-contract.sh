@@ -40,6 +40,8 @@ wait_health() {
 echo "== typecheck =="
 pnpm typecheck
 
+mkdir -p "${ROOT}/data"
+
 echo "== start fake (auth=off) :$PORT =="
 F2B_SANDBOX_BACKEND=fake \
   F2B_AUTH_MODE=off \

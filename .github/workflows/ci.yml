@@ -14,14 +14,14 @@ jobs:
   contract:
     name: typecheck + contract smokes
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout sandbox
         uses: actions/checkout@v4
         with:
           path: f2b-sandbox
 
-      - name: Checkout f2b-spec (file: 依赖)
+      - name: Checkout f2b-spec (file dependency)
         uses: actions/checkout@v4
         with:
           repository: f2b-dev/f2b-spec
@@ -45,6 +45,14 @@ jobs:
 
       - name: Contract smokes
         working-directory: f2b-sandbox
+        env:
+          # 隔离端口，避免与 runner 上其它服务冲突
+          F2B_CI_PORT: "18787"
+          F2B_CI_AUTH_PORT: "18788"
+          F2B_CI_CAP_PORT: "19789"
+          F2B_CI_TIMEOUT_PORT: "19790"
+          F2B_CI_CUBE_PORT: "18991"
+          F2B_CI_ENVD_PORT: "18992"
         run: pnpm ci:contract
 
   image:
