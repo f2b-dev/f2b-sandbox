@@ -95,6 +95,7 @@ jobs:
             type=sha,prefix=
 
       - name: Build (and push on main)
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -104,3 +105,14 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # 1.0 前：生成 SBOM 工件；semver tag / cosign 仍待 1.0 日
+      - name: SBOM (Syft)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: anchore/sbom-action@v0
+        with:
+          image: ghcr.io/f2b-dev/sandbox:latest
+          format: spdx-json
+          output-file: sandbox-sbom.spdx.json
+          upload-artifact: true
+          upload-release-assets: false

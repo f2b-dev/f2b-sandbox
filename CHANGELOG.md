@@ -6,6 +6,7 @@
 
 ### Added
 
+- GHA image job：main 推送后 Syft SBOM 工件（semver/cosign 仍 1.0）
 - 容量与 reaper 字段回显于 `/healthz`
 - 契约 CI（`ci:contract`）与 GHA 端口/DB 隔离
 - `smoke:cube-http`：经 `/v1` 验收 `backend=cube`（mock 或真集群）；`ci:contract` 已串 mock 路径
